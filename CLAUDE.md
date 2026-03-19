@@ -110,7 +110,7 @@ Keys:
 ## Build Configuration
 
 ### PlatformIO Configuration
-- **`framework = espidf, arduino`** — Required by Bluepad32 (ESP-IDF component) while retaining Arduino API convenience (Preferences, Wire, etc.)
+- **`framework = arduino`** — Arduino-ESP32 (built on ESP-IDF internally). All ESP-IDF APIs accessible via direct includes (`driver/gpio.h`, `driver/spi_slave.h`, etc.). Avoids the managed component bloat of `framework = espidf, arduino`.
 - **`board_build.partitions = partitions.csv`** — Custom partition table with ~1.9MB app partition (BT Classic stack is large)
 - **`CORE_DEBUG_LEVEL=3`** — ESP32 debug logging at INFO level
 
@@ -138,6 +138,8 @@ Keys:
 
 1. **EC11 encoder detent count** — `ENC_STEPS_PER_DETENT` is set to 4 (most common). If the display board's encoder has a different ratio, navigation will feel too fast or too slow. Adjust in `config.h`.
 2. **GPIO ISR service double-install** — Arduino-ESP32 may pre-install the GPIO ISR service. `input_init()` tolerates `ESP_ERR_INVALID_STATE` from `gpio_install_isr_service()`.
+3. **I2C display blocking** — `u8g2.sendBuffer()` blocks the main loop for ~20ms per frame. Acceptable in Phase 1, but Phase 3's SPI slave has hard real-time constraints. Will need display rendering in a separate FreeRTOS task.
+4. **No unit tests yet** — Testable pure-logic functions exist (encoder table, menu state machine, value formatting) but test infrastructure is deferred to Epoch 3.
 
 ---
 

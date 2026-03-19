@@ -2,6 +2,9 @@
 #include "config.h"
 
 #include <Arduino.h>
+// WHY: ESP-IDF gpio API used instead of Arduino attachInterrupt because
+// attachInterrupt does not support passing an argument (void*) to the ISR.
+// This is needed for the shared button_isr to identify which button fired.
 #include "driver/gpio.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -34,8 +37,16 @@ static QueueHandle_t input_queue = nullptr;
 // Fires on any edge of either encoder channel. The state machine
 // inherently rejects noise (invalid transitions produce delta=0),
 // so no delay-based debounce is needed.
+//
+// CONCURRENCY NOTE: Both PIN_ENC_A and PIN_ENC_B are registered to
+// this same ISR via gpio_isr_handler_add. On ESP32, the GPIO ISR
+// service multiplexes all GPIO interrupts into a single ISR at a
+// fixed priority, so both handlers run serialized — no reentrancy
+// or cross-core race on enc_accum/enc_prev_state.
 
 static void IRAM_ATTR encoder_isr(void* arg) {
+    if (!input_queue) return;
+
     uint8_t a   = gpio_get_level((gpio_num_t)PIN_ENC_A);
     uint8_t b   = gpio_get_level((gpio_num_t)PIN_ENC_B);
     uint8_t cur = (a << 1) | b;
@@ -64,22 +75,26 @@ static void IRAM_ATTR encoder_isr(void* arg) {
 }
 
 // ── Button ISR ─────────────────────────────────────────────────────
-// Shared ISR for all three buttons. The button index (0=CON, 1=BAK,
-// 2=PHS) is passed via the void* arg. Debounce uses
-// esp_timer_get_time() — no blocking delays in ISR context.
+// Shared ISR for all three buttons. The button index is passed via
+// the void* arg:  0=CON, 1=BAK, 2=PHS
+// Debounce uses esp_timer_get_time() — no blocking delays in ISR.
 
-static volatile int64_t last_btn_time[3] = {0, 0, 0};
+static const uint8_t BTN_COUNT = 3;
+static volatile int64_t last_btn_time[BTN_COUNT] = {0, 0, 0};
 
-static const InputEvent BTN_EVENTS[3] DRAM_ATTR = {
+static const InputEvent BTN_EVENTS[BTN_COUNT] DRAM_ATTR = {
     INPUT_BTN_CON,
     INPUT_BTN_BAK,
     INPUT_BTN_PHS,
 };
 
 static void IRAM_ATTR button_isr(void* arg) {
-    uint32_t idx = (uint32_t)arg;
-    int64_t now  = esp_timer_get_time();
+    if (!input_queue) return;
 
+    uint32_t idx = (uint32_t)(uintptr_t)arg;
+    if (idx >= BTN_COUNT) return;
+
+    int64_t now = esp_timer_get_time();
     if (now - last_btn_time[idx] < DEBOUNCE_US) return;
     last_btn_time[idx] = now;
 
@@ -92,6 +107,17 @@ static void IRAM_ATTR button_isr(void* arg) {
 // ── Public API ─────────────────────────────────────────────────────
 
 void input_init() {
+    // Clean up prior init if called more than once (e.g., soft reset)
+    if (input_queue) {
+        gpio_isr_handler_remove((gpio_num_t)PIN_ENC_A);
+        gpio_isr_handler_remove((gpio_num_t)PIN_ENC_B);
+        gpio_isr_handler_remove((gpio_num_t)PIN_BTN_CON);
+        gpio_isr_handler_remove((gpio_num_t)PIN_BTN_BAK);
+        gpio_isr_handler_remove((gpio_num_t)PIN_ENC_SW);
+        vQueueDelete(input_queue);
+        input_queue = nullptr;
+    }
+
     // Configure encoder pins with internal pull-ups
     pinMode(PIN_ENC_A,  INPUT_PULLUP);
     pinMode(PIN_ENC_B,  INPUT_PULLUP);
@@ -100,14 +126,21 @@ void input_init() {
     pinMode(PIN_BTN_BAK, INPUT_PULLUP);
 
     input_queue = xQueueCreate(INPUT_QUEUE_SIZE, sizeof(InputEvent));
+    if (!input_queue) {
+        Serial.println("[input] FATAL: queue alloc failed");
+        abort();
+    }
 
     // Read initial encoder state so the first transition is valid
     enc_prev_state = (digitalRead(PIN_ENC_A) << 1) | digitalRead(PIN_ENC_B);
+    enc_accum = 0;
+    encoder_position = 0;
 
     // Install GPIO ISR service (tolerate if Arduino already installed it)
     esp_err_t err = gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-        Serial.printf("[input] gpio_install_isr_service failed: %d\n", err);
+        Serial.printf("[input] FATAL: gpio_install_isr_service failed: %d\n", err);
+        abort();
     }
 
     // Encoder: interrupt on any edge of both channels
@@ -120,9 +153,9 @@ void input_init() {
     gpio_set_intr_type((gpio_num_t)PIN_BTN_CON, GPIO_INTR_NEGEDGE);
     gpio_set_intr_type((gpio_num_t)PIN_BTN_BAK, GPIO_INTR_NEGEDGE);
     gpio_set_intr_type((gpio_num_t)PIN_ENC_SW,  GPIO_INTR_NEGEDGE);
-    gpio_isr_handler_add((gpio_num_t)PIN_BTN_CON, button_isr, (void*)0);
-    gpio_isr_handler_add((gpio_num_t)PIN_BTN_BAK, button_isr, (void*)1);
-    gpio_isr_handler_add((gpio_num_t)PIN_ENC_SW,  button_isr, (void*)2);
+    gpio_isr_handler_add((gpio_num_t)PIN_BTN_CON, button_isr, (void*)(uintptr_t)0);
+    gpio_isr_handler_add((gpio_num_t)PIN_BTN_BAK, button_isr, (void*)(uintptr_t)1);
+    gpio_isr_handler_add((gpio_num_t)PIN_ENC_SW,  button_isr, (void*)(uintptr_t)2);
 
     Serial.println("[input] initialized — encoder + 3 buttons");
 }

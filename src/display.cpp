@@ -52,8 +52,16 @@ static void render_visualizer() {
     u8g2.drawStr(0, 57, "[CON] open menu");
 }
 
+// ── Settings Layout Constants ──────────────────────────────────────
+static const uint8_t SETTINGS_MAX_VISIBLE = 4;
+static const uint8_t SETTINGS_ITEM_H      = 12;
+static const uint8_t SETTINGS_LIST_Y      = 16;
+static const uint8_t SETTINGS_VAL_COL     = 95;  // Value column X position
+static const uint8_t SETTINGS_VAL_EDIT_COL = 90; // Editing column (wider for brackets)
+
 static void render_settings() {
     uint8_t count    = menu_get_item_count();
+    uint8_t editable = menu_get_editable_count();
     uint8_t selected = menu_get_selected_item();
     bool    editing  = (menu_get_state() == MENU_SETTING_EDIT);
 
@@ -61,22 +69,20 @@ static void render_settings() {
     u8g2.drawStr(0, 10, "Settings");
     u8g2.drawHLine(0, 13, OLED_WIDTH);
 
-    // Render visible menu items (up to 4 fit below the header)
-    static const uint8_t MAX_VISIBLE = 4;
-    static const uint8_t ITEM_H = 12;
-    static const uint8_t LIST_Y = 16;
-
-    // Scroll offset keeps selected item visible
+    // Scroll offset keeps selected item visible.
+    // Self-corrects on menu re-entry: selected resets to 0 in
+    // handle_home, which triggers the `selected < scroll_offset`
+    // guard below to reset scroll_offset on the first render.
     static uint8_t scroll_offset = 0;
     if (selected < scroll_offset) scroll_offset = selected;
-    if (selected >= scroll_offset + MAX_VISIBLE) {
-        scroll_offset = selected - MAX_VISIBLE + 1;
+    if (selected >= scroll_offset + SETTINGS_MAX_VISIBLE) {
+        scroll_offset = selected - SETTINGS_MAX_VISIBLE + 1;
     }
 
     u8g2.setFont(u8g2_font_5x7_tr);
-    for (uint8_t i = 0; i < MAX_VISIBLE && (scroll_offset + i) < count; i++) {
+    for (uint8_t i = 0; i < SETTINGS_MAX_VISIBLE && (scroll_offset + i) < count; i++) {
         uint8_t idx = scroll_offset + i;
-        uint8_t y = LIST_Y + i * ITEM_H;
+        uint8_t y = SETTINGS_LIST_Y + i * SETTINGS_ITEM_H;
 
         // Selection indicator
         if (idx == selected) {
@@ -86,19 +92,17 @@ static void render_settings() {
         const char* label = menu_get_item_label(idx);
         u8g2.drawStr(10, y + 8, label);
 
-        // Show current value for editable items (first 3)
-        if (idx < 3) {
+        // Show current value for editable items only
+        if (idx < editable) {
             char val[8];
             if (idx == selected && editing) {
-                // Editing: show value with brackets
                 menu_get_edit_value(val, sizeof(val));
-                char decorated[12];
+                char decorated[sizeof(val) + 3]; // '[' + val + ']' + '\0'
                 snprintf(decorated, sizeof(decorated), "[%s]", val);
-                u8g2.drawStr(90, y + 8, decorated);
+                u8g2.drawStr(SETTINGS_VAL_EDIT_COL, y + 8, decorated);
             } else {
-                // Just show the value
                 menu_get_edit_value_for(idx, val, sizeof(val));
-                u8g2.drawStr(95, y + 8, val);
+                u8g2.drawStr(SETTINGS_VAL_COL, y + 8, val);
             }
         }
     }

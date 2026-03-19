@@ -19,11 +19,12 @@ MenuState menu_get_state();
 // State for display rendering
 uint8_t     menu_get_selected_item();
 uint8_t     menu_get_item_count();
+uint8_t     menu_get_editable_count();
 const char* menu_get_item_label(uint8_t idx);
 void        menu_get_edit_value(char* buf, size_t len);
 void        menu_get_edit_value_for(uint8_t idx, char* buf, size_t len);
 
-// Settings accessors (used by button mapper in Epoch 3)
+// Settings accessors (used by button mapper in Phase 3)
 uint8_t menu_get_trigger_threshold();
 bool    menu_get_stick_to_dpad();
 uint8_t menu_get_player_number();

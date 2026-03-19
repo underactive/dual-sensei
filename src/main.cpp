@@ -40,13 +40,16 @@ void loop() {
         menu_handle_input(evt);
     }
 
-    // Push live state to display for the visualizer screen
-    display_set_encoder_pos(input_get_encoder_pos());
-    display_set_button_states(
-        !digitalRead(PIN_BTN_CON),   // Active-low → invert
-        !digitalRead(PIN_BTN_BAK),
-        !digitalRead(PIN_ENC_SW)
-    );
+    // Push live state to display only when visualizer is active
+    // (avoids redundant GPIO reads during menu navigation)
+    if (display_get_screen() == SCREEN_VISUALIZER) {
+        display_set_encoder_pos(input_get_encoder_pos());
+        display_set_button_states(
+            !digitalRead(PIN_BTN_CON),   // Active-low → invert
+            !digitalRead(PIN_BTN_BAK),
+            !digitalRead(PIN_ENC_SW)
+        );
+    }
 
     // Render (throttled internally to ~15 FPS)
     display_update();

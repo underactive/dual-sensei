@@ -1,4 +1,10 @@
 # Dual-Sensei ESP-IDF SDK Configuration Defaults
+#
+# NOTE: With framework=arduino in PlatformIO, these are NOT auto-applied.
+# Arduino-ESP32 has its own built-in sdkconfig (BT Classic on, 240MHz,
+# 1000Hz FreeRTOS tick). This file documents our intended config and
+# serves as reference if switching to framework=espidf in the future.
+# To override IDF config with Arduino, use build_flags in platformio.ini.
 
 # Bluetooth (prep for Epoch 2 — Bluepad32 requires BT Classic)
 CONFIG_BT_ENABLED=y
@@ -7,7 +13,7 @@ CONFIG_BT_BLE_ENABLED=n
 CONFIG_BTDM_CTRL_MODE_BR_EDR_ONLY=y
 
 # CPU frequency
-CONFIG_ESP32_DEFAULT_CPU_FREQ_240=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
 
 # SPI slave ISR in IRAM (critical for PS1 ACK timing in Epoch 3)
 CONFIG_SPI_SLAVE_IN_IRAM=y
