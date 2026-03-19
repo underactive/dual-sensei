@@ -9,12 +9,20 @@ enum Screen : uint8_t {
     SCREEN_MENU,
 };
 
+// PS1 controller button state — populated by BT module in Epoch 2
+struct ControllerState {
+    bool connected = false;
+    bool up = false, down = false, left = false, right = false;
+    bool cross = false, circle = false, square = false, triangle = false;
+    bool l1 = false, l2 = false, r1 = false, r2 = false;
+    bool select = false, start = false;
+};
+
 void   display_init();
 void   display_show_splash();
 void   display_set_screen(Screen screen);
 Screen display_get_screen();
 void   display_update();
 
-// Data setters for the visualizer screen (Phase 1: encoder/button test)
-void display_set_encoder_pos(int32_t pos);
-void display_set_button_states(bool con, bool bak, bool phs);
+// Push controller state to the visualizer screen
+void display_set_controller(const ControllerState& state);

@@ -17,10 +17,7 @@ static Screen   current_screen = SCREEN_SPLASH;
 static uint32_t last_frame_ms  = 0;
 
 // Visualizer data (pushed by main loop)
-static int32_t vis_enc_pos = 0;
-static bool    vis_btn_con = false;
-static bool    vis_btn_bak = false;
-static bool    vis_btn_phs = false;
+static ControllerState vis_ctrl;
 
 // ── Screen Renderers ───────────────────────────────────────────────
 
@@ -33,23 +30,169 @@ static void render_pairing() {
     u8g2.drawStr(0, 54, "to pair controller");
 }
 
+// ── Visualizer Drawing Helpers ────────────────────────────────────
+
+// Draw a text-label button (L1, L2, R1, R2, SL, ST).
+// Pressed = white rounded-box with black text (inverted).
+static void draw_text_btn(uint8_t x, uint8_t y, const char* label, bool pressed) {
+    uint8_t w = u8g2.getStrWidth(label);
+    if (pressed) {
+        u8g2.setDrawColor(1);
+        u8g2.drawRBox(x - 1, y - 7, w + 3, 9, 1);
+        u8g2.setDrawColor(0);
+        u8g2.drawStr(x, y, label);
+        u8g2.setDrawColor(1);
+    } else {
+        u8g2.drawStr(x, y, label);
+    }
+}
+
+// Draw a face button: circle outline + symbol inside.
+// Pressed = filled disc with symbol drawn in black.
+static void draw_face_btn_triangle(uint8_t cx, uint8_t cy, uint8_t r, bool pressed) {
+    if (pressed) {
+        u8g2.drawDisc(cx, cy, r);
+        u8g2.setDrawColor(0);
+    } else {
+        u8g2.drawCircle(cx, cy, r);
+    }
+    // Small triangle pointing up
+    u8g2.drawTriangle(cx, cy - 3, cx - 3, cy + 2, cx + 3, cy + 2);
+    u8g2.setDrawColor(1);
+}
+
+static void draw_face_btn_cross(uint8_t cx, uint8_t cy, uint8_t r, bool pressed) {
+    if (pressed) {
+        u8g2.drawDisc(cx, cy, r);
+        u8g2.setDrawColor(0);
+    } else {
+        u8g2.drawCircle(cx, cy, r);
+    }
+    // X shape
+    u8g2.drawLine(cx - 2, cy - 2, cx + 2, cy + 2);
+    u8g2.drawLine(cx + 2, cy - 2, cx - 2, cy + 2);
+    u8g2.setDrawColor(1);
+}
+
+static void draw_face_btn_circle(uint8_t cx, uint8_t cy, uint8_t r, bool pressed) {
+    if (pressed) {
+        u8g2.drawDisc(cx, cy, r);
+        u8g2.setDrawColor(0);
+    } else {
+        u8g2.drawCircle(cx, cy, r);
+    }
+    u8g2.drawCircle(cx, cy, 2);
+    u8g2.setDrawColor(1);
+}
+
+static void draw_face_btn_square(uint8_t cx, uint8_t cy, uint8_t r, bool pressed) {
+    if (pressed) {
+        u8g2.drawDisc(cx, cy, r);
+        u8g2.setDrawColor(0);
+    } else {
+        u8g2.drawCircle(cx, cy, r);
+    }
+    u8g2.drawFrame(cx - 2, cy - 2, 5, 5);
+    u8g2.setDrawColor(1);
+}
+
+// Draw the D-pad as a cross shape. Each arm fills when its direction is pressed.
+static void draw_dpad(uint8_t cx, uint8_t cy,
+                      bool up, bool down, bool left, bool right) {
+    const uint8_t arm_w = 5;  // Width of each arm
+    const uint8_t arm_l = 5;  // Length of each arm
+
+    // Center block (always filled)
+    u8g2.drawBox(cx - arm_w / 2, cy - arm_w / 2, arm_w, arm_w);
+
+    // Up arm
+    if (up) u8g2.drawBox(cx - arm_w / 2, cy - arm_w / 2 - arm_l, arm_w, arm_l);
+    else    u8g2.drawFrame(cx - arm_w / 2, cy - arm_w / 2 - arm_l, arm_w, arm_l);
+
+    // Down arm
+    if (down) u8g2.drawBox(cx - arm_w / 2, cy + arm_w / 2 + 1, arm_w, arm_l);
+    else      u8g2.drawFrame(cx - arm_w / 2, cy + arm_w / 2 + 1, arm_w, arm_l);
+
+    // Left arm
+    if (left) u8g2.drawBox(cx - arm_w / 2 - arm_l, cy - arm_w / 2, arm_l, arm_w);
+    else      u8g2.drawFrame(cx - arm_w / 2 - arm_l, cy - arm_w / 2, arm_l, arm_w);
+
+    // Right arm
+    if (right) u8g2.drawBox(cx + arm_w / 2 + 1, cy - arm_w / 2, arm_l, arm_w);
+    else       u8g2.drawFrame(cx + arm_w / 2 + 1, cy - arm_w / 2, arm_l, arm_w);
+}
+
+// Compute PS1 active-low button bytes from controller state.
+// Byte layout matches PS1 digital pad protocol (0x41 device).
+static void compute_ps1_bytes(const ControllerState& cs,
+                              uint8_t& lo, uint8_t& hi) {
+    // buttons_lo: SEL  n/a  n/a  STRT UP   RT   DN   LT
+    lo = 0xFF;
+    if (cs.select) lo &= ~(1 << 0);
+    if (cs.start)  lo &= ~(1 << 3);
+    if (cs.up)     lo &= ~(1 << 4);
+    if (cs.right)  lo &= ~(1 << 5);
+    if (cs.down)   lo &= ~(1 << 6);
+    if (cs.left)   lo &= ~(1 << 7);
+
+    // buttons_hi: L2   R2   L1   R1   TRI  CIR  X    SQ
+    hi = 0xFF;
+    if (cs.l2)       hi &= ~(1 << 0);
+    if (cs.r2)       hi &= ~(1 << 1);
+    if (cs.l1)       hi &= ~(1 << 2);
+    if (cs.r1)       hi &= ~(1 << 3);
+    if (cs.triangle) hi &= ~(1 << 4);
+    if (cs.circle)   hi &= ~(1 << 5);
+    if (cs.cross)    hi &= ~(1 << 6);
+    if (cs.square)   hi &= ~(1 << 7);
+}
+
+// ── Visualizer Screen ────────────────────────────────────────────
+
 static void render_visualizer() {
-    char buf[22];
-    u8g2.setFont(u8g2_font_6x10_tr);
-
-    u8g2.drawStr(0, 10, "Input Test");
-    u8g2.drawHLine(0, 13, OLED_WIDTH);
-
-    snprintf(buf, sizeof(buf), "Encoder: %ld", (long)vis_enc_pos);
-    u8g2.drawStr(0, 28, buf);
-
-    snprintf(buf, sizeof(buf), "CON:%d BAK:%d PHS:%d",
-             vis_btn_con, vis_btn_bak, vis_btn_phs);
-    u8g2.drawStr(0, 42, buf);
-
-    u8g2.drawHLine(0, 46, OLED_WIDTH);
+    // Status line
     u8g2.setFont(u8g2_font_5x7_tr);
-    u8g2.drawStr(0, 57, "[CON] open menu");
+    if (vis_ctrl.connected) {
+        u8g2.drawStr(0, 7, "Connected");
+    } else {
+        u8g2.drawStr(0, 7, "No Controller");
+    }
+
+    // Player number (right-aligned)
+    char pstr[4];
+    snprintf(pstr, sizeof(pstr), "P%u", menu_get_player_number());
+    uint8_t pw = u8g2.getStrWidth(pstr);
+    u8g2.drawStr(OLED_WIDTH - pw, 7, pstr);
+
+    // Separator
+    u8g2.drawHLine(0, 10, OLED_WIDTH);
+
+    // Shoulder buttons
+    draw_text_btn(2,   21, "L2", vis_ctrl.l2);
+    draw_text_btn(20,  21, "L1", vis_ctrl.l1);
+    draw_text_btn(95,  21, "R1", vis_ctrl.r1);
+    draw_text_btn(113, 21, "R2", vis_ctrl.r2);
+
+    // D-pad
+    draw_dpad(20, 38, vis_ctrl.up, vis_ctrl.down,
+              vis_ctrl.left, vis_ctrl.right);
+
+    // Select / Start
+    draw_text_btn(50, 41, "SL", vis_ctrl.select);
+    draw_text_btn(68, 41, "ST", vis_ctrl.start);
+
+    // Face buttons
+    draw_face_btn_triangle(108, 29, 5, vis_ctrl.triangle);
+    draw_face_btn_square(96,    39, 5, vis_ctrl.square);
+    draw_face_btn_circle(120,   39, 5, vis_ctrl.circle);
+    draw_face_btn_cross(108,    49, 5, vis_ctrl.cross);
+
+    // PS1 protocol bytes
+    uint8_t lo, hi;
+    compute_ps1_bytes(vis_ctrl, lo, hi);
+    char hex[16];
+    snprintf(hex, sizeof(hex), "PS1: %02X %02X", lo, hi);
+    u8g2.drawStr(0, 62, hex);
 }
 
 // ── Settings Layout Constants ──────────────────────────────────────
@@ -172,14 +315,8 @@ Screen display_get_screen() {
     return current_screen;
 }
 
-void display_set_encoder_pos(int32_t pos) {
-    vis_enc_pos = pos;
-}
-
-void display_set_button_states(bool con, bool bak, bool phs) {
-    vis_btn_con = con;
-    vis_btn_bak = bak;
-    vis_btn_phs = phs;
+void display_set_controller(const ControllerState& state) {
+    vis_ctrl = state;
 }
 
 void display_update() {
