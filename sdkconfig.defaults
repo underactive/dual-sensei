@@ -1,0 +1,22 @@
+# Dual-Sensei ESP-IDF SDK Configuration Defaults
+
+# Bluetooth (prep for Epoch 2 — Bluepad32 requires BT Classic)
+CONFIG_BT_ENABLED=y
+CONFIG_BT_CLASSIC_ENABLED=y
+CONFIG_BT_BLE_ENABLED=n
+CONFIG_BTDM_CTRL_MODE_BR_EDR_ONLY=y
+
+# CPU frequency
+CONFIG_ESP32_DEFAULT_CPU_FREQ_240=y
+
+# SPI slave ISR in IRAM (critical for PS1 ACK timing in Epoch 3)
+CONFIG_SPI_SLAVE_IN_IRAM=y
+
+# Console
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+
+# Watchdog — extend task WDT for display rendering
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+
+# FreeRTOS tick rate (1ms ticks for responsive input handling)
+CONFIG_FREERTOS_HZ=1000
