@@ -16,6 +16,7 @@ static const MenuItem MENU_ITEMS[] = {
     { MENU_VALUE,   "Touchpad Sel/St","Touchpad left=Sel right=St",3 },
     { MENU_VALUE,   "Console Mode",   "Target console",            4 },
     { MENU_HEADING, "Device",         nullptr,                    -1 },
+    { MENU_ACTION,  "Test Rumble",    "Send rumble to controller",-1 },
     { MENU_ACTION,  "Pairing",        "Pair DualSense controller",-1 },
     { MENU_ACTION,  "About",          "Firmware info",            -1 },
 };
@@ -29,8 +30,9 @@ static const int8_t SID_TOUCHPAD_SELECT = 3;
 static const int8_t SID_CONSOLE_MODE    = 4;
 
 // Named action item indices — match positions in MENU_ITEMS[]
-static const uint8_t IDX_PAIRING = 7;
-static const uint8_t IDX_ABOUT   = 8;
+static const uint8_t IDX_RUMBLE_TEST = 7;
+static const uint8_t IDX_PAIRING    = 8;
+static const uint8_t IDX_ABOUT      = 9;
 
 // Console mode range
 static const uint8_t CONSOLE_MODE_MIN = 0;  // PS1
@@ -172,7 +174,9 @@ static void handle_settings(InputEvent evt) {
                 snapshot_current_setting();
                 state = MENU_SETTING_EDIT;
             } else if (MENU_ITEMS[selected_item].type == MENU_ACTION) {
-                if (selected_item == IDX_PAIRING) {
+                if (selected_item == IDX_RUMBLE_TEST) {
+                    bt_play_rumble(RUMBLE_TEST_DURATION_MS, RUMBLE_TEST_WEAK, RUMBLE_TEST_STRONG);
+                } else if (selected_item == IDX_PAIRING) {
                     state = MENU_PAIRING;
                     bt_start_pairing();
                     display_set_screen(SCREEN_PAIRING);

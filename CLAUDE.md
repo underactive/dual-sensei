@@ -117,7 +117,7 @@ Modular C++ with Arduino setup()/loop() running under ESP-IDF. Each subsystem is
 - Queue flushed on menu entry to prevent stale encoder events
 - Settings saved to NVS on CON, discarded on BAK (snapshot/restore pattern)
 - Four persistent settings: trigger threshold (0-255), stick-to-dpad (bool), player number (1-2), console mode (0=PS1, 1=PS2)
-- Eight menu items across two groups: Controller (Trigger Thresh, Stick to DPad, Player Number, Touchpad Sel/St, Console Mode) and Device (Pairing, About)
+- Nine menu items across two groups: Controller (Trigger Thresh, Stick to DPad, Player Number, Touchpad Sel/St, Console Mode) and Device (Test Rumble, Pairing, About)
 
 #### 4. Settings / Configuration Storage
 ```

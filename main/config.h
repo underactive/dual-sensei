@@ -60,5 +60,10 @@
 #define TOUCHPAD_SELECT_DEFAULT    false  // Touchpad left=Select, right=Start
 #define CONSOLE_MODE_DEFAULT       0      // 0=PS1, 1=PS2
 
+// ── Rumble Test Defaults ──────────────────────────────────────────
+#define RUMBLE_TEST_DURATION_MS  300    // Test rumble pulse length
+#define RUMBLE_TEST_WEAK         128    // Small motor intensity (0-255)
+#define RUMBLE_TEST_STRONG       200    // Large motor intensity (0-255)
+
 // ── NVS Namespace ──────────────────────────────────────────────────
 #define NVS_NAMESPACE "dual-sensei"

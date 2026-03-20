@@ -82,3 +82,6 @@
 - [ ] About screen shows "PS5-to-PSX Bridge"
 - [ ] Serial log on boot shows console mode: "[menu] loaded — ... mode=PS1" or "mode=PS2"
 - [ ] All existing Epoch 2 button mappings still work correctly after PS2 expansion
+- [ ] "Test Rumble" action in Settings > Device sends a rumble pulse to connected DualSense
+- [ ] "Test Rumble" with no controller connected does nothing (no crash)
+- [ ] Serial log shows "[bt] rumble: 300ms weak=128 strong=200" on test rumble

@@ -153,6 +153,13 @@ void bt_start_pairing() {
     Serial.println("[bt] scanning for controllers...");
 }
 
+void bt_play_rumble(uint16_t duration_ms, uint8_t weak, uint8_t strong) {
+    if (connected_gamepad && connected_gamepad->isConnected()) {
+        connected_gamepad->playDualRumble(0, duration_ms, weak, strong);
+        Serial.printf("[bt] rumble: %ums weak=%u strong=%u\n", duration_ms, weak, strong);
+    }
+}
+
 void bt_stop_pairing() {
     BP32.enableNewBluetoothConnections(false);
     Serial.println("[bt] scanning stopped");
