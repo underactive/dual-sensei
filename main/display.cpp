@@ -2,6 +2,7 @@
 #include "bt.h"
 #include "config.h"
 #include "menu.h"
+#include "psx.h"
 
 #include <Arduino.h>
 #include <U8g2lib.h>
@@ -150,50 +151,7 @@ static void draw_analog_stick(uint8_t cx, uint8_t cy, uint8_t r,
     u8g2.drawDisc(cx + dx, cy + dy, 1);
 }
 
-// Compute PSX active-low protocol bytes from controller state.
-// PS1 mode: 2 bytes (button_lo, button_hi).
-// PS2 mode: 6 bytes (button_lo, button_hi, RX, RY, LX, LY).
-static void compute_protocol_bytes(const ControllerState& cs, uint8_t console_mode,
-                                   uint8_t* bytes, uint8_t& count) {
-    // buttons_lo: LT  DN  RT  UP  STRT [R3] [L3] SEL  (active-low)
-    // PS1: bits 1,2 always 1 (unused per digital pad spec). PS2: L3=bit1, R3=bit2.
-    uint8_t lo = 0xFF;
-    if (cs.select) lo &= ~(1 << 0);
-    if (cs.start)  lo &= ~(1 << 3);
-    if (cs.up)     lo &= ~(1 << 4);
-    if (cs.right)  lo &= ~(1 << 5);
-    if (cs.down)   lo &= ~(1 << 6);
-    if (cs.left)   lo &= ~(1 << 7);
-
-    if (console_mode == 1) {
-        if (cs.l3) lo &= ~(1 << 1);
-        if (cs.r3) lo &= ~(1 << 2);
-    }
-
-    // buttons_hi: SQ  X  CIR  TRI  R1  L1  R2  L2  (active-low)
-    uint8_t hi = 0xFF;
-    if (cs.l2)       hi &= ~(1 << 0);
-    if (cs.r2)       hi &= ~(1 << 1);
-    if (cs.l1)       hi &= ~(1 << 2);
-    if (cs.r1)       hi &= ~(1 << 3);
-    if (cs.triangle) hi &= ~(1 << 4);
-    if (cs.circle)   hi &= ~(1 << 5);
-    if (cs.cross)    hi &= ~(1 << 6);
-    if (cs.square)   hi &= ~(1 << 7);
-
-    bytes[0] = lo;
-    bytes[1] = hi;
-
-    if (console_mode == 1) {  // PS2: append 4 stick bytes (RX, RY, LX, LY)
-        bytes[2] = cs.rx;
-        bytes[3] = cs.ry;
-        bytes[4] = cs.lx;
-        bytes[5] = cs.ly;
-        count = 6;
-    } else {
-        count = 2;
-    }
-}
+// Protocol bytes for visualizer display — uses shared psx module
 
 // ── Status Line Icons ────────────────────────────────────────────
 
@@ -289,15 +247,14 @@ static void render_visualizer() {
     }
 
     // ── Protocol bytes ──
-    uint8_t bytes[6];
-    uint8_t count = 0;
-    compute_protocol_bytes(vis_ctrl, mode, bytes, count);
+    uint8_t resp[PSX_RESPONSE_MAX];
+    uint8_t resp_len = psx_build_response(vis_ctrl, mode, resp);
     char hex[32];
-    if (count == 2) {
-        snprintf(hex, sizeof(hex), "PS1: %02X %02X", bytes[0], bytes[1]);
-    } else {
+    if (resp_len == 4) {  // PS1: show button bytes only (skip ID + 0x5A)
+        snprintf(hex, sizeof(hex), "PS1: %02X %02X", resp[2], resp[3]);
+    } else {  // PS2: show button bytes + stick bytes
         snprintf(hex, sizeof(hex), "PS2:%02X%02X %02X%02X %02X%02X",
-                 bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5]);
+                 resp[2], resp[3], resp[4], resp[5], resp[6], resp[7]);
     }
     u8g2.drawStr(0, 62, hex);
 }

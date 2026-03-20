@@ -4,7 +4,8 @@ set(srcs
         "bt.cpp"
         "display.cpp"
         "input.cpp"
-        "menu.cpp")
+        "menu.cpp"
+        "psx.cpp")
 
 set(requires "bluepad32" "bluepad32_arduino" "arduino" "btstack")
 
