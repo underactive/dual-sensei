@@ -53,6 +53,12 @@ void loop() {
     // Render (throttled internally to ~15 FPS)
     display_update();
 
+    // Serial commands: 's' = screenshot
+    if (Serial.available()) {
+        char c = Serial.read();
+        if (c == 's') display_screenshot();
+    }
+
     // Yield to FreeRTOS scheduler — required with espidf framework
     // to avoid task watchdog timeout on the Arduino task.
     vTaskDelay(1);

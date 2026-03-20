@@ -28,3 +28,6 @@ void   display_update();
 
 // Push controller state to the visualizer screen
 void display_set_controller(const ControllerState& state);
+
+// Dump current framebuffer as base64-encoded PNG to Serial
+void display_screenshot();

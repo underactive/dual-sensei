@@ -134,7 +134,7 @@ static void draw_dpad(uint8_t cx, uint8_t cy,
     else       u8g2.drawFrame(cx + arm_w / 2 + 1, cy - arm_w / 2, arm_l, arm_w);
 }
 
-// Draw an analog stick: circle outline with a position dot inside.
+// Draw an analog stick: circle outline with a centered position dot.
 static void draw_analog_stick(uint8_t cx, uint8_t cy, uint8_t r,
                               uint8_t axis_x, uint8_t axis_y) {
     u8g2.drawCircle(cx, cy, r);
@@ -142,7 +142,8 @@ static void draw_analog_stick(uint8_t cx, uint8_t cy, uint8_t r,
     // Position dot: map 0-255 axis to -(r-1)..+(r-1) pixel offset
     int8_t dx = (int8_t)(((int16_t)axis_x - 128) * (r - 1) / 127);
     int8_t dy = (int8_t)(((int16_t)axis_y - 128) * (r - 1) / 127);
-    u8g2.drawBox(cx + dx, cy + dy, 2, 2);
+    // drawDisc r=1 gives a 5-pixel diamond centered exactly on the target pixel
+    u8g2.drawDisc(cx + dx, cy + dy, 1);
 }
 
 // Compute PSX active-low protocol bytes from controller state.
@@ -248,19 +249,19 @@ static void render_visualizer() {
 
     // ── Shoulder row ──
     if (mode == 1) {
-        // PS2: L3 L2 L1 ... R1 R2 R3 (inside-out, matching physical layout)
-        draw_text_btn(2,   21, "L3", vis_ctrl.l3);
+        // PS2: L1 L2 L3 ... R3 R2 R1 (outside-in)
+        draw_text_btn(2,   21, "L1", vis_ctrl.l1);
         draw_text_btn(16,  21, "L2", vis_ctrl.l2);
-        draw_text_btn(30,  21, "L1", vis_ctrl.l1);
-        draw_text_btn(85,  21, "R1", vis_ctrl.r1);
+        draw_text_btn(30,  21, "L3", vis_ctrl.l3);
+        draw_text_btn(85,  21, "R3", vis_ctrl.r3);
         draw_text_btn(99,  21, "R2", vis_ctrl.r2);
-        draw_text_btn(113, 21, "R3", vis_ctrl.r3);
+        draw_text_btn(113, 21, "R1", vis_ctrl.r1);
     } else {
-        // PS1: L2 L1 ... R1 R2 (outer triggers first)
-        draw_text_btn(2,   21, "L2", vis_ctrl.l2);
-        draw_text_btn(20,  21, "L1", vis_ctrl.l1);
-        draw_text_btn(95,  21, "R1", vis_ctrl.r1);
-        draw_text_btn(113, 21, "R2", vis_ctrl.r2);
+        // PS1: L1 L2 ... R2 R1 (outside-in)
+        draw_text_btn(2,   21, "L1", vis_ctrl.l1);
+        draw_text_btn(20,  21, "L2", vis_ctrl.l2);
+        draw_text_btn(95,  21, "R2", vis_ctrl.r2);
+        draw_text_btn(113, 21, "R1", vis_ctrl.r1);
     }
 
     // ── D-pad ──
@@ -268,8 +269,8 @@ static void render_visualizer() {
               vis_ctrl.left, vis_ctrl.right);
 
     // ── Select / Start ──
-    draw_text_btn(50, 41, "SL", vis_ctrl.select);
-    draw_text_btn(68, 41, "ST", vis_ctrl.start);
+    draw_text_btn(50, 37, "SL", vis_ctrl.select);
+    draw_text_btn(68, 37, "ST", vis_ctrl.start);
 
     // ── Face buttons ──
     draw_face_btn_triangle(108, 29, 5, vis_ctrl.triangle);
@@ -278,10 +279,9 @@ static void render_visualizer() {
     draw_face_btn_cross(108,    49, 5, vis_ctrl.cross);
 
     // ── Analog sticks (PS2 only) ──
-    // Centered below Select/Start with spacing between them
     if (mode == 1) {
-        draw_analog_stick(48, 49, 4, vis_ctrl.lx, vis_ctrl.ly);
-        draw_analog_stick(80, 49, 4, vis_ctrl.rx, vis_ctrl.ry);
+        draw_analog_stick(48, 45, 6, vis_ctrl.lx, vis_ctrl.ly);
+        draw_analog_stick(80, 45, 6, vis_ctrl.rx, vis_ctrl.ry);
     }
 
     // ── Protocol bytes ──
@@ -498,4 +498,181 @@ void display_update() {
     }
 
     u8g2.sendBuffer();
+}
+
+// ── PNG Screenshot Encoder ────────────────────────────────────────
+// Outputs a complete base64-encoded PNG of the 128x64 OLED framebuffer
+// over Serial. Copy the base64 between the markers and decode to PNG.
+// Ported from ghost_operator project.
+
+static uint32_t png_crc32(const uint8_t* data, size_t len, uint32_t crc) {
+    for (size_t i = 0; i < len; i++) {
+        crc ^= data[i];
+        for (uint8_t j = 0; j < 8; j++)
+            crc = (crc >> 1) ^ ((crc & 1) ? 0xEDB88320 : 0);
+    }
+    return crc;
+}
+
+static const char PROGMEM b64_chars[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+static uint8_t b64_buf[57];  // 57 raw bytes = 76 base64 chars per line
+static uint8_t b64_pos;
+
+static void b64_flush() {
+    if (b64_pos == 0) return;
+    char out[4];
+    for (uint8_t i = 0; i < b64_pos; i += 3) {
+        uint8_t rem = b64_pos - i;
+        uint32_t tri = ((uint32_t)b64_buf[i] << 16);
+        if (rem > 1) tri |= ((uint32_t)b64_buf[i + 1] << 8);
+        if (rem > 2) tri |= b64_buf[i + 2];
+        out[0] = pgm_read_byte(&b64_chars[(tri >> 18) & 0x3F]);
+        out[1] = pgm_read_byte(&b64_chars[(tri >> 12) & 0x3F]);
+        out[2] = (rem > 1) ? pgm_read_byte(&b64_chars[(tri >> 6) & 0x3F]) : '=';
+        out[3] = (rem > 2) ? pgm_read_byte(&b64_chars[tri & 0x3F]) : '=';
+        Serial.write((uint8_t*)out, 4);
+    }
+    Serial.println();
+    b64_pos = 0;
+}
+
+static void b64_write(const uint8_t* data, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        b64_buf[b64_pos++] = data[i];
+        if (b64_pos == 57) b64_flush();
+    }
+}
+
+static void b64_write_byte(uint8_t val) {
+    b64_buf[b64_pos++] = val;
+    if (b64_pos == 57) b64_flush();
+}
+
+static void b64_write_u32(uint32_t val) {
+    uint8_t buf[4] = {
+        (uint8_t)(val >> 24), (uint8_t)(val >> 16),
+        (uint8_t)(val >> 8),  (uint8_t)(val)
+    };
+    b64_write(buf, 4);
+}
+
+// Convert one row from page format (U8g2/SSD1306/SH1106) to PNG scanline
+static void convert_page_row(const uint8_t* fb, uint8_t y, uint8_t* out16) {
+    uint8_t page = y >> 3;
+    uint8_t bit  = y & 7;
+    const uint8_t* page_base = fb + page * 128;
+    for (uint8_t byte_idx = 0; byte_idx < 16; byte_idx++) {
+        uint8_t packed = 0;
+        uint8_t x = byte_idx << 3;
+        for (uint8_t bit_pos = 0; bit_pos < 8; bit_pos++) {
+            if (page_base[x + bit_pos] & (1 << bit))
+                packed |= (0x80 >> bit_pos);
+        }
+        out16[byte_idx] = packed;
+    }
+}
+
+void display_screenshot() {
+    const uint8_t* fb = u8g2.getBufferPtr();
+    uint8_t row_buf[16];
+
+    Serial.println("\n--- PNG START ---");
+    b64_pos = 0;
+
+    // PNG signature
+    static const uint8_t PROGMEM png_sig[] = {
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A
+    };
+    uint8_t sig[8];
+    memcpy_P(sig, png_sig, 8);
+    b64_write(sig, 8);
+
+    // IHDR chunk: 128x64, 1-bit grayscale
+    static const uint8_t PROGMEM ihdr[] = {
+        0x00, 0x00, 0x00, 0x0D,  // length = 13
+        0x49, 0x48, 0x44, 0x52,  // "IHDR"
+        0x00, 0x00, 0x00, 0x80,  // width = 128
+        0x00, 0x00, 0x00, 0x40,  // height = 64
+        0x01,                    // bit depth = 1
+        0x00,                    // color type = grayscale
+        0x00, 0x00, 0x00,        // compression, filter, interlace
+    };
+    uint8_t ihdr_buf[21];
+    memcpy_P(ihdr_buf, ihdr, 21);
+    b64_write(ihdr_buf, 21);
+    uint32_t ihdr_crc = png_crc32(ihdr_buf + 4, 17, 0xFFFFFFFF) ^ 0xFFFFFFFF;
+    b64_write_u32(ihdr_crc);
+
+    // IDAT chunk: 64 rows * (1 filter + 16 pixel bytes) = 1088 raw bytes
+    // Zlib: header(2) + deflate stored(5) + data(1088) + adler32(4) = 1099
+    static const uint16_t IDAT_LEN = 1099;
+    static const uint16_t RAW_LEN  = 1088;
+
+    uint8_t idat_len[4] = {
+        (uint8_t)(IDAT_LEN >> 24), (uint8_t)(IDAT_LEN >> 16),
+        (uint8_t)(IDAT_LEN >> 8),  (uint8_t)(IDAT_LEN)
+    };
+    b64_write(idat_len, 4);
+
+    static const uint8_t idat_type[] = {'I', 'D', 'A', 'T'};
+    b64_write(idat_type, 4);
+    uint32_t idat_crc = png_crc32(idat_type, 4, 0xFFFFFFFF);
+
+    // Zlib header
+    uint8_t zlib_hdr[] = {0x78, 0x01};
+    b64_write(zlib_hdr, 2);
+    idat_crc = png_crc32(zlib_hdr, 2, idat_crc);
+
+    // Deflate stored block: BFINAL=1, BTYPE=00
+    uint8_t deflate_hdr[] = {
+        0x01,
+        (uint8_t)(RAW_LEN & 0xFF), (uint8_t)(RAW_LEN >> 8),
+        (uint8_t)(~RAW_LEN & 0xFF), (uint8_t)((~RAW_LEN >> 8) & 0xFF)
+    };
+    b64_write(deflate_hdr, 5);
+    idat_crc = png_crc32(deflate_hdr, 5, idat_crc);
+
+    // Scanlines + Adler32
+    uint32_t adler_a = 1, adler_b = 0;
+    for (uint8_t y = 0; y < 64; y++) {
+        uint8_t filter = 0x00;
+        b64_write_byte(filter);
+        idat_crc = png_crc32(&filter, 1, idat_crc);
+        adler_a = (adler_a + filter) % 65521;
+        adler_b = (adler_b + adler_a) % 65521;
+
+        convert_page_row(fb, y, row_buf);
+        b64_write(row_buf, 16);
+        idat_crc = png_crc32(row_buf, 16, idat_crc);
+        for (uint8_t i = 0; i < 16; i++) {
+            adler_a = (adler_a + row_buf[i]) % 65521;
+            adler_b = (adler_b + adler_a) % 65521;
+        }
+    }
+
+    // Adler32 checksum
+    uint32_t adler = (adler_b << 16) | adler_a;
+    uint8_t adler_bytes[4] = {
+        (uint8_t)(adler >> 24), (uint8_t)(adler >> 16),
+        (uint8_t)(adler >> 8),  (uint8_t)(adler)
+    };
+    b64_write(adler_bytes, 4);
+    idat_crc = png_crc32(adler_bytes, 4, idat_crc);
+
+    idat_crc ^= 0xFFFFFFFF;
+    b64_write_u32(idat_crc);
+
+    // IEND chunk
+    static const uint8_t PROGMEM iend[] = {
+        0x00, 0x00, 0x00, 0x00,  // length = 0
+        0x49, 0x45, 0x4E, 0x44,  // "IEND"
+        0xAE, 0x42, 0x60, 0x82   // CRC (well-known)
+    };
+    uint8_t iend_buf[12];
+    memcpy_P(iend_buf, iend, 12);
+    b64_write(iend_buf, 12);
+
+    b64_flush();
+    Serial.println("--- PNG END ---");
 }
