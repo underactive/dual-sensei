@@ -2,7 +2,7 @@
 
 // ── Firmware Identity ──────────────────────────────────────────────
 #define FW_NAME    "DUAL-SENSEI"
-#define FW_VERSION "0.1.0"
+#define FW_VERSION "0.2.0"
 
 // ── I2C — OLED Display ────────────────────────────────────────────
 #define PIN_I2C_SDA 21
@@ -22,12 +22,13 @@
 #define PIN_LED_1   16  // Test LED 1
 #define PIN_LED_2   17  // Test LED 2
 
-// ── PS1 SPI — VSPI (Phase 2) ──────────────────────────────────────
-#define PIN_PS1_CLK 18  // SPI CLK  — from PS1 pin 7
-#define PIN_PS1_CMD 23  // SPI MOSI — from PS1 pin 2
-#define PIN_PS1_DAT 19  // SPI MISO — to PS1 pin 1 (open-drain)
-#define PIN_PS1_ATT 5   // SPI CS   — from PS1 pin 6
-#define PIN_PS1_ACK 4   // ACK pulse — to PS1 pin 9 (open-drain)
+// ── PSX SPI — VSPI (Phase 2) ──────────────────────────────────────
+// Shared between PS1 and PS2 (same connector pinout)
+#define PIN_PSX_CLK 18  // SPI CLK  — from PSX pin 7
+#define PIN_PSX_CMD 23  // SPI MOSI — from PSX pin 2
+#define PIN_PSX_DAT 19  // SPI MISO — to PSX pin 1 (open-drain)
+#define PIN_PSX_ATT 5   // SPI CS   — from PSX pin 6
+#define PIN_PSX_ACK 4   // ACK pulse — to PSX pin 9 (open-drain)
 
 // ── Display Constants ──────────────────────────────────────────────
 #define OLED_WIDTH       128
@@ -46,14 +47,18 @@
 #define MENU_VIEWPORT_ROWS   5
 #define MENU_HELP_BASELINE  59
 
-// ── PS1 Protocol Constants ─────────────────────────────────────────
-#define PS1_DEVICE_ID    0x41   // Digital pad controller ID
-#define PS1_DATA_MARKER  0x5A   // "Data ready" byte
-#define PS1_IDLE_BYTE    0xFF   // All buttons released (active-low)
+// ── PSX Protocol Constants ────────────────────────────────────────
+#define PS1_DEVICE_ID         0x41   // PS1 digital pad controller ID
+#define PS2_DEVICE_ID_ANALOG  0x73   // PS2 DualShock 2 analog mode
+#define PSX_DATA_MARKER       0x5A   // "Data ready" byte (shared)
+#define PSX_IDLE_BYTE         0xFF   // All buttons released (active-low)
+#define PS2_STICK_CENTER      0x80   // 128 = stick centered
 
 // ── Button Mapping Defaults ────────────────────────────────────────
 #define TRIGGER_THRESHOLD_DEFAULT  128    // L2/R2 analog-to-digital threshold (0-255)
 #define STICK_TO_DPAD_DEFAULT      false  // Left stick → D-pad mapping
+#define TOUCHPAD_SELECT_DEFAULT    false  // Touchpad left=Select, right=Start
+#define CONSOLE_MODE_DEFAULT       0      // 0=PS1, 1=PS2
 
 // ── NVS Namespace ──────────────────────────────────────────────────
 #define NVS_NAMESPACE "dual-sensei"

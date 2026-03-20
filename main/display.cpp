@@ -1,4 +1,5 @@
 #include "display.h"
+#include "bt.h"
 #include "config.h"
 #include "menu.h"
 
@@ -23,11 +24,20 @@ static ControllerState vis_ctrl;
 
 static void render_pairing() {
     u8g2.setFont(u8g2_font_6x10_tr);
-    u8g2.drawStr(0, 10, "Waiting for");
-    u8g2.drawStr(0, 22, "DualSense...");
-    u8g2.drawHLine(0, 26, OLED_WIDTH);
-    u8g2.drawStr(0, 42, "Hold SHARE + PS");
-    u8g2.drawStr(0, 54, "to pair controller");
+
+    if (bt_is_connected()) {
+        u8g2.drawStr(0, 10, "Controller");
+        u8g2.drawStr(0, 22, "Connected!");
+        u8g2.drawHLine(0, 26, OLED_WIDTH);
+        u8g2.setFont(u8g2_font_5x7_tr);
+        u8g2.drawStr(0, 42, "Press [BAK] to return");
+    } else {
+        u8g2.drawStr(0, 10, "Waiting for");
+        u8g2.drawStr(0, 22, "DualSense...");
+        u8g2.drawHLine(0, 26, OLED_WIDTH);
+        u8g2.drawStr(0, 42, "Hold CREATE + PS");
+        u8g2.drawStr(0, 54, "to pair controller");
+    }
 }
 
 // ── Visualizer Drawing Helpers ────────────────────────────────────
@@ -122,12 +132,25 @@ static void draw_dpad(uint8_t cx, uint8_t cy,
     else       u8g2.drawFrame(cx + arm_w / 2 + 1, cy - arm_w / 2, arm_l, arm_w);
 }
 
-// Compute PS1 active-low button bytes from controller state.
-// Byte layout matches PS1 digital pad protocol (0x41 device).
-static void compute_ps1_bytes(const ControllerState& cs,
-                              uint8_t& lo, uint8_t& hi) {
-    // buttons_lo: SEL  n/a  n/a  STRT UP   RT   DN   LT
-    lo = 0xFF;
+// Draw an analog stick: circle outline with a position dot inside.
+static void draw_analog_stick(uint8_t cx, uint8_t cy, uint8_t r,
+                              uint8_t axis_x, uint8_t axis_y) {
+    u8g2.drawCircle(cx, cy, r);
+
+    // Position dot: map 0-255 axis to -(r-1)..+(r-1) pixel offset
+    int8_t dx = (int8_t)(((int16_t)axis_x - 128) * (r - 1) / 127);
+    int8_t dy = (int8_t)(((int16_t)axis_y - 128) * (r - 1) / 127);
+    u8g2.drawBox(cx + dx, cy + dy, 2, 2);
+}
+
+// Compute PSX active-low protocol bytes from controller state.
+// PS1 mode: 2 bytes (button_lo, button_hi).
+// PS2 mode: 6 bytes (button_lo, button_hi, RX, RY, LX, LY).
+static void compute_protocol_bytes(const ControllerState& cs, uint8_t console_mode,
+                                   uint8_t* bytes, uint8_t& count) {
+    // buttons_lo: LT  DN  RT  UP  STRT [R3] [L3] SEL  (active-low)
+    // PS1: bits 1,2 always 1 (unused per digital pad spec). PS2: L3=bit1, R3=bit2.
+    uint8_t lo = 0xFF;
     if (cs.select) lo &= ~(1 << 0);
     if (cs.start)  lo &= ~(1 << 3);
     if (cs.up)     lo &= ~(1 << 4);
@@ -135,8 +158,13 @@ static void compute_ps1_bytes(const ControllerState& cs,
     if (cs.down)   lo &= ~(1 << 6);
     if (cs.left)   lo &= ~(1 << 7);
 
-    // buttons_hi: L2   R2   L1   R1   TRI  CIR  X    SQ
-    hi = 0xFF;
+    if (console_mode == 1) {
+        if (cs.l3) lo &= ~(1 << 1);
+        if (cs.r3) lo &= ~(1 << 2);
+    }
+
+    // buttons_hi: SQ  X  CIR  TRI  R1  L1  R2  L2  (active-low)
+    uint8_t hi = 0xFF;
     if (cs.l2)       hi &= ~(1 << 0);
     if (cs.r2)       hi &= ~(1 << 1);
     if (cs.l1)       hi &= ~(1 << 2);
@@ -145,12 +173,27 @@ static void compute_ps1_bytes(const ControllerState& cs,
     if (cs.circle)   hi &= ~(1 << 5);
     if (cs.cross)    hi &= ~(1 << 6);
     if (cs.square)   hi &= ~(1 << 7);
+
+    bytes[0] = lo;
+    bytes[1] = hi;
+
+    if (console_mode == 1) {  // PS2: append 4 stick bytes (RX, RY, LX, LY)
+        bytes[2] = cs.rx;
+        bytes[3] = cs.ry;
+        bytes[4] = cs.lx;
+        bytes[5] = cs.ly;
+        count = 6;
+    } else {
+        count = 2;
+    }
 }
 
 // ── Visualizer Screen ────────────────────────────────────────────
 
 static void render_visualizer() {
-    // Status line
+    uint8_t mode = menu_get_console_mode();
+
+    // ── Status line (shared) ──
     u8g2.setFont(u8g2_font_5x7_tr);
     if (vis_ctrl.connected) {
         u8g2.drawStr(0, 7, "Connected");
@@ -158,40 +201,62 @@ static void render_visualizer() {
         u8g2.drawStr(0, 7, "No Controller");
     }
 
-    // Player number (right-aligned)
     char pstr[4];
     snprintf(pstr, sizeof(pstr), "P%u", menu_get_player_number());
     uint8_t pw = u8g2.getStrWidth(pstr);
     u8g2.drawStr(OLED_WIDTH - pw, 7, pstr);
 
-    // Separator
     u8g2.drawHLine(0, 10, OLED_WIDTH);
 
-    // Shoulder buttons
-    draw_text_btn(2,   21, "L2", vis_ctrl.l2);
-    draw_text_btn(20,  21, "L1", vis_ctrl.l1);
-    draw_text_btn(95,  21, "R1", vis_ctrl.r1);
-    draw_text_btn(113, 21, "R2", vis_ctrl.r2);
+    // ── Shoulder row ──
+    if (mode == 1) {
+        // PS2: L3 L2 L1 ... R1 R2 R3 (inside-out, matching physical layout)
+        draw_text_btn(2,   21, "L3", vis_ctrl.l3);
+        draw_text_btn(16,  21, "L2", vis_ctrl.l2);
+        draw_text_btn(30,  21, "L1", vis_ctrl.l1);
+        draw_text_btn(85,  21, "R1", vis_ctrl.r1);
+        draw_text_btn(99,  21, "R2", vis_ctrl.r2);
+        draw_text_btn(113, 21, "R3", vis_ctrl.r3);
+    } else {
+        // PS1: L2 L1 ... R1 R2 (outer triggers first)
+        draw_text_btn(2,   21, "L2", vis_ctrl.l2);
+        draw_text_btn(20,  21, "L1", vis_ctrl.l1);
+        draw_text_btn(95,  21, "R1", vis_ctrl.r1);
+        draw_text_btn(113, 21, "R2", vis_ctrl.r2);
+    }
 
-    // D-pad
+    // ── D-pad ──
     draw_dpad(20, 38, vis_ctrl.up, vis_ctrl.down,
               vis_ctrl.left, vis_ctrl.right);
 
-    // Select / Start
+    // ── Select / Start ──
     draw_text_btn(50, 41, "SL", vis_ctrl.select);
     draw_text_btn(68, 41, "ST", vis_ctrl.start);
 
-    // Face buttons
+    // ── Face buttons ──
     draw_face_btn_triangle(108, 29, 5, vis_ctrl.triangle);
     draw_face_btn_square(96,    39, 5, vis_ctrl.square);
     draw_face_btn_circle(120,   39, 5, vis_ctrl.circle);
     draw_face_btn_cross(108,    49, 5, vis_ctrl.cross);
 
-    // PS1 protocol bytes
-    uint8_t lo, hi;
-    compute_ps1_bytes(vis_ctrl, lo, hi);
-    char hex[16];
-    snprintf(hex, sizeof(hex), "PS1: %02X %02X", lo, hi);
+    // ── Analog sticks (PS2 only) ──
+    // Centered below Select/Start with spacing between them
+    if (mode == 1) {
+        draw_analog_stick(48, 49, 4, vis_ctrl.lx, vis_ctrl.ly);
+        draw_analog_stick(80, 49, 4, vis_ctrl.rx, vis_ctrl.ry);
+    }
+
+    // ── Protocol bytes ──
+    uint8_t bytes[6];
+    uint8_t count = 0;
+    compute_protocol_bytes(vis_ctrl, mode, bytes, count);
+    char hex[32];
+    if (count == 2) {
+        snprintf(hex, sizeof(hex), "PS1: %02X %02X", bytes[0], bytes[1]);
+    } else {
+        snprintf(hex, sizeof(hex), "PS2:%02X%02X %02X%02X %02X%02X",
+                 bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5]);
+    }
     u8g2.drawStr(0, 62, hex);
 }
 
@@ -321,7 +386,7 @@ static void render_about() {
     u8g2.drawStr((OLED_WIDTH - w) / 2, 32, ver);
 
     u8g2.setFont(u8g2_font_5x7_tr);
-    u8g2.drawStr(10, 48, "PS5-to-PS1 Bridge");
+    u8g2.drawStr(10, 48, "PS5-to-PSX Bridge");
     u8g2.drawStr(10, 58, "[BAK] back");
 }
 

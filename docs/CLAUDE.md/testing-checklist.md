@@ -38,4 +38,47 @@
 - [ ] Viewport scrolls correctly when navigating to items beyond the 5 visible rows
 - [ ] Scrolling up to a group's first item also shows its preceding heading
 - [ ] No crashes or watchdog resets after 10 minutes of operation
-- [ ] Serial monitor shows init messages: display, input, menu with loaded settings
+- [ ] Serial monitor shows init messages: display, input, menu, bt with loaded settings
+
+## Epoch 2: DualSense Bluetooth
+
+- [ ] Serial log shows "[bt] Bluepad32 v{version} initialized" on boot
+- [ ] Put DualSense in pairing mode (hold Create + PS until light bar blinks)
+- [ ] Navigate to Settings > Pairing and press CON — serial shows "[bt] scanning for controllers..."
+- [ ] DualSense connects — serial shows "[bt] connected: DualSense VID=... PID=..."
+- [ ] Visualizer status line changes from "No Controller" to "Connected"
+- [ ] D-pad presses on DualSense are reflected on visualizer D-pad in real-time
+- [ ] Face buttons (Cross, Circle, Square, Triangle) are reflected correctly
+- [ ] L1/R1 shoulder buttons are reflected
+- [ ] L2/R2 triggers activate when analog value exceeds trigger threshold setting
+- [ ] Select (Create) and Start (Options) buttons are reflected
+- [ ] PS1 protocol bytes at bottom of visualizer update with button presses (not all FF)
+- [ ] Changing "Trigger Thresh" setting in menu affects L2/R2 activation sensitivity
+- [ ] Enabling "Stick to DPad" causes left stick to activate D-pad directions on visualizer
+- [ ] Stick-to-DPad OR's with physical D-pad (both work simultaneously)
+- [ ] Pressing BAK from pairing screen shows "[bt] scanning stopped" in serial
+- [ ] DualSense reconnects automatically after power cycle (BT keys stored in NVS)
+- [ ] Disconnecting DualSense (turning it off) resets visualizer to "No Controller" and all buttons released
+- [ ] Second DualSense attempting to connect is rejected (serial shows "[bt] already have a controller")
+
+## Epoch 2: PS2 Scope Expansion
+
+- [ ] PS1 mode: visualizer shows original layout (no sticks, no L3/R3, face buttons r=5)
+- [ ] PS2 mode: L3/R3 text labels appear in shoulder row next to L1/R1
+- [ ] PS2 mode: pressing L3 highlights L3 label (inverted text), pressing R3 highlights R3 label
+- [ ] PS2 mode: analog stick circles appear between D-pad/Select and Start/face buttons
+- [ ] PS2 mode: left stick position dot tracks DualSense left stick movement in real-time
+- [ ] PS2 mode: right stick position dot tracks DualSense right stick movement in real-time
+- [ ] Switching Console Mode between PS1/PS2 changes visualizer layout immediately
+- [ ] "Console Mode" setting appears in Settings > Controller group, toggles between PS1/PS2
+- [ ] Console Mode = PS1: protocol bytes line shows "PS1: XX XX" (2 bytes)
+- [ ] Console Mode = PS2: protocol bytes line shows "PS2:XXYY XXYY XXYY" (6 bytes: buttons + sticks)
+- [ ] Console Mode = PS2: L3/R3 presses reflected in protocol button bytes (bits 1,2 of low byte)
+- [ ] Console Mode = PS2: stick movement reflected in protocol stick bytes (last 4 bytes change)
+- [ ] Console Mode setting persists across power cycle (NVS key "con_mode")
+- [ ] "Touchpad Sel/St" setting toggles between ON/OFF
+- [ ] Touchpad Sel/St = ON: left touchpad area activates Select, right activates Start
+- [ ] Player Number help text reads "Console port: P1 or P2"
+- [ ] About screen shows "PS5-to-PSX Bridge"
+- [ ] Serial log on boot shows console mode: "[menu] loaded — ... mode=PS1" or "mode=PS2"
+- [ ] All existing Epoch 2 button mappings still work correctly after PS2 expansion

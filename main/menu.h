@@ -43,3 +43,5 @@ bool             menu_is_at_max();
 uint8_t menu_get_trigger_threshold();
 bool    menu_get_stick_to_dpad();
 uint8_t menu_get_player_number();
+bool    menu_get_touchpad_select();
+uint8_t menu_get_console_mode();

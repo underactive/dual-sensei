@@ -9,13 +9,15 @@ enum Screen : uint8_t {
     SCREEN_MENU,
 };
 
-// PS1 controller button state — populated by BT module in Epoch 2
+// Controller state — PS1/PS2 buttons + PS2 analog sticks
 struct ControllerState {
     bool connected = false;
     bool up = false, down = false, left = false, right = false;
     bool cross = false, circle = false, square = false, triangle = false;
     bool l1 = false, l2 = false, r1 = false, r2 = false;
+    bool l3 = false, r3 = false;
     bool select = false, start = false;
+    uint8_t lx = 0x80, ly = 0x80, rx = 0x80, ry = 0x80;  // Analog sticks (0-255, 128=center)
 };
 
 void   display_init();

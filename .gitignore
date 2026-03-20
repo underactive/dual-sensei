@@ -8,11 +8,14 @@ build/
 sdkconfig
 sdkconfig.old
 sdkconfig.esp32
+sdkconfig.esp32dev
 managed_components/
 dependencies.lock
 
-# PlatformIO auto-generated
-CMakeLists.txt
+# Bluepad32 / BTstack / Arduino components (large, fetched separately)
+# These are copied from the official esp-idf-arduino-bluepad32-template.
+# To restore: clone the template and copy its components/ directory.
+components/
 
 # IDE
 .vscode/

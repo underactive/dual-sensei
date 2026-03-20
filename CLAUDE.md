@@ -2,10 +2,10 @@
 
 ## Project Overview
 
-**Dual-Sensei** is a PS5 DualSense-to-PS1 wireless controller bridge using an ESP32-WROOM-32, enabling wireless play on the original PlayStation 1 (1995). Two independent bridge units provide 2-player support.
+**Dual-Sensei** is a PS5 DualSense-to-PS1/PS2 wireless controller bridge using an ESP32-WROOM-32, enabling wireless play on the original PlayStation 1 (1995) and PlayStation 2 (2000). Two independent bridge units provide 2-player support.
 
-**Current Version:** 0.1.0
-**Status:** In development (Phase 1 — local UI validation, no PS1 connection yet)
+**Current Version:** 0.2.0
+**Status:** In development (Epoch 2 — DualSense BT connected, no PS1/PS2 connection yet)
 
 ---
 
@@ -45,32 +45,36 @@
 | 2 | BT status (onboard) | Also used as init indicator |
 | 16 | Test LED 1 | 220Ω series resistor |
 | 17 | Test LED 2 | 220Ω series resistor |
-| **PS1 SPI — VSPI (Phase 2)** | | |
-| 18 | SPI CLK (PS1 pin 7) | Input from PS1 |
-| 23 | SPI MOSI / CMD (PS1 pin 2) | Input from PS1 |
-| 19 | SPI MISO / DAT (PS1 pin 1) | Output, open-drain |
-| 5 | SPI CS / ATT (PS1 pin 6) | Input from PS1 |
-| 4 | ACK (PS1 pin 9) | Output, open-drain, manual GPIO pulse |
+| **PSX SPI — VSPI (Phase 2)** | | Shared between PS1 and PS2 (same connector) |
+| 18 | SPI CLK (PSX pin 7) | Input from console |
+| 23 | SPI MOSI / CMD (PSX pin 2) | Input from console |
+| 19 | SPI MISO / DAT (PSX pin 1) | Output, open-drain |
+| 5 | SPI CS / ATT (PSX pin 6) | Input from console |
+| 4 | ACK (PSX pin 9) | Output, open-drain, manual GPIO pulse |
 
 ---
 
 ## Architecture
 
 ### Core Files
-Modular C++ with Arduino setup()/loop() running under ESP-IDF. Each subsystem is a pair of .h/.cpp files with a C-style API (no classes).
+Modular C++ with Arduino setup()/loop() running under ESP-IDF. Each subsystem is a pair of .h/.cpp files with a C-style API (no classes). Source lives in `main/` (ESP-IDF convention).
 
-- `src/main.cpp` — Entry point: Arduino setup()/loop(), orchestrates subsystems
-- `src/config.h` — All GPIO pin definitions, constants, thresholds
-- `src/display.h/.cpp` — U8g2 SH1106 OLED driver, screen rendering, ControllerState struct
-- `src/input.h/.cpp` — ISR-driven encoder + button input, FreeRTOS event queue
-- `src/menu.h/.cpp` — Menu state machine + NVS settings persistence
+- `main/main.c` — BTstack/Bluepad32 bootstrap (runs on CPU0, launches Arduino on CPU1)
+- `main/main.cpp` — Arduino entry point: setup()/loop(), orchestrates subsystems
+- `main/config.h` — All GPIO pin definitions, constants, thresholds
+- `main/bt.h/.cpp` — Bluepad32 DualSense BT host, controller data mapping
+- `main/display.h/.cpp` — U8g2 SH1106 OLED driver, screen rendering, ControllerState struct
+- `main/input.h/.cpp` — ISR-driven encoder + button input, FreeRTOS event queue
+- `main/menu.h/.cpp` — Menu state machine + NVS settings persistence
 
 ### Dependencies
-- **PlatformIO** — Build system
-- **Arduino-ESP32** — Framework (built on ESP-IDF internally; all IDF APIs still accessible via direct includes)
+- **PlatformIO** — Build system (pioarduino platform fork for ESP-IDF + Arduino component support)
+- **ESP-IDF** v5.4.2 — Framework (`framework = espidf` in platformio.ini)
+- **Arduino-ESP32** v3.2.1 — Included as ESP-IDF component in `components/arduino`
+- **Bluepad32** v4.2.0 — DualSense Bluetooth HID host (`components/bluepad32` + `components/bluepad32_arduino`)
+- **BTstack** — Bluetooth host stack used by Bluepad32 (`components/btstack`, replaces ESP-IDF Bluedroid)
 - **U8g2** (`olikraus/U8g2`) — SH1106 OLED driver (via PlatformIO lib_deps)
 - **Preferences** (Arduino built-in) — NVS key-value storage
-- **Bluepad32** (Epoch 2) — DualSense Bluetooth HID
 
 ### Key Subsystems
 
@@ -89,10 +93,21 @@ Modular C++ with Arduino setup()/loop() running under ESP-IDF. Each subsystem is
 - `display_update()` throttled to ~15 FPS via `millis()` check
 - Splash is one-shot (rendered once, not redrawn)
 - Menu rendering queries `menu.h` getters — no circular header dependency
-- **Visualizer screen**: PS1 controller layout with D-pad, face buttons (△○×□), shoulders (L1/L2/R1/R2), Select/Start — all driven by `ControllerState` struct. Shows live PS1 active-low protocol bytes at bottom. In Phase 1, all buttons show as released ("FF FF"). Epoch 2 populates state from DualSense HID.
-- **ControllerState**: Struct in `display.h` with 14 button bools + `connected` flag, passed via `display_set_controller()`
+- **Visualizer screen**: Mode-dependent controller layout driven by `ControllerState` struct and console mode setting. **PS1 mode**: original digital pad layout — D-pad, face buttons (△○×□, r=5), shoulders (L1/L2/R1/R2), Select/Start, "PS1: XX XX" protocol bytes. **PS2 mode**: DualShock 2 layout — same buttons plus L3/R3 text labels in shoulder row (highlighted on press), analog stick circles (r=4) positioned between D-pad/face and Select/Start matching the physical controller layout, "PS2:XXYY XXYY XXYY" protocol bytes (6 bytes).
+- **ControllerState**: Struct in `display.h` with 16 button bools (including L3/R3) + 4 analog stick axes (lx/ly/rx/ry, 0-255, 128=center) + `connected` flag, passed via `display_set_controller()`
 
-#### 3. Menu System (`menu.h/.cpp`)
+#### 3. Bluetooth System (`bt.h/.cpp`)
+- **Bluepad32** BT host for DualSense (BR/EDR via BTstack on CPU0)
+- Callbacks (`on_connected`, `on_disconnected`) run on CPU1 inside `BP32.update()` — same task as Arduino `loop()`
+- `bt_update()` polls Bluepad32 and maps DualSense data to `ControllerState`
+- **Button mapping**: DualSense uses Xbox-style naming in Bluepad32 (A=Cross, B=Circle, X=Square, Y=Triangle)
+- **Analog triggers**: L2/R2 provide 0-1023 analog values, thresholded against `trigger_threshold` NVS setting (0-255, scaled via `/4`)
+- **Analog sticks**: Bluepad32 gives -511..512 signed; converted to PS2 range 0-255 (128=center) via `axis_to_ps2()`. Stored in ControllerState for visualizer and future SPI protocol.
+- **Stick-to-DPad**: When enabled, left stick axes (±512 range) are OR'd into D-pad bools using 128 deadzone
+- **Pairing**: `bt_start_pairing()` enables BT scanning, `bt_stop_pairing()` disables it. DualSense enters pairing mode via Create+PS hold.
+- Single-controller design: rejects additional connections after first controller pairs
+
+#### 4. Menu System (`menu.h/.cpp`)
 - State machine: HOME → SETTINGS → SETTING_EDIT / PAIRING / ABOUT
 - **Data-driven menu**: `MENU_ITEMS[]` array of `MenuItem` structs with `type` (HEADING/VALUE/ACTION), `label`, `help` text, and `setting_id`
 - Three item types: **MENU_HEADING** (non-selectable section divider), **MENU_VALUE** (editable setting), **MENU_ACTION** (navigable action)
@@ -101,8 +116,8 @@ Modular C++ with Arduino setup()/loop() running under ESP-IDF. Each subsystem is
 - Encoder push (PHS) treated as CON in all menu states for consistent behavior
 - Queue flushed on menu entry to prevent stale encoder events
 - Settings saved to NVS on CON, discarded on BAK (snapshot/restore pattern)
-- Three persistent settings: trigger threshold (0-255), stick-to-dpad (bool), player number (1-2)
-- Seven menu items across two groups: Controller (Trigger Thresh, Stick to DPad, Player Number) and Device (Pairing, About)
+- Four persistent settings: trigger threshold (0-255), stick-to-dpad (bool), player number (1-2), console mode (0=PS1, 1=PS2)
+- Eight menu items across two groups: Controller (Trigger Thresh, Stick to DPad, Player Number, Touchpad Sel/St, Console Mode) and Device (Pairing, About)
 
 #### 4. Settings / Configuration Storage
 ```
@@ -111,6 +126,7 @@ Keys:
   "trig_thresh" — uint8_t (default 128)
   "stick_dpad"  — bool (default false)
   "player_num"  — uint8_t (default 1)
+  "con_mode"    — uint8_t (default 0, 0=PS1, 1=PS2)
 ```
 - Saved to ESP32 NVS via Arduino Preferences library
 - Loaded on boot in `menu_init()` with range validation (player_num clamped to 1-2)
@@ -120,8 +136,11 @@ Keys:
 ## Build Configuration
 
 ### PlatformIO Configuration
-- **`framework = arduino`** — Arduino-ESP32 (built on ESP-IDF internally). All ESP-IDF APIs accessible via direct includes (`driver/gpio.h`, `driver/spi_slave.h`, etc.). Avoids the managed component bloat of `framework = espidf, arduino` which caused build failures during Epoch 1 scaffolding.
-- **`board_build.partitions = partitions.csv`** — Custom partition table with ~1.9MB app partition (BT Classic stack is large)
+- **`framework = espidf`** — ESP-IDF v5.4.2 with Arduino-ESP32 as a component (in `components/arduino`). All Arduino and ESP-IDF APIs are accessible. Uses pioarduino platform fork for ESP-IDF + Arduino component support.
+- **`src_dir = main`** — Source files in `main/` per ESP-IDF convention (set in `[platformio]` section)
+- **`lib_compat_mode = off`** — Required for U8g2 (Arduino library) to work with ESP-IDF framework
+- **`board_build.partitions = partitions.csv`** — Custom partition table with ~1.9MB app partition (BTstack + Bluepad32 + Arduino component)
+- **`board_build.embed_txtfiles`** — Certificate files required by Arduino component's transitive deps (ESP Insights/Rainmaker). Not used by Dual-Sensei but must exist for linking.
 - **`upload_speed = 460800`** — Fastest reliable speed for most USB-serial chips; lower to 115200 if upload fails
 
 ### Environment Variables
@@ -150,12 +169,14 @@ Environment files / define sources:
 
 ## External Integrations
 
-### Bluepad32 (Epoch 2 — not yet integrated)
-- **What:** DualSense Bluetooth HID host library for ESP32
-- **Loaded via:** PlatformIO `lib_deps` (to be added in Epoch 2)
-- **Lifecycle:** Initializes BT Classic stack, manages pairing and connection callbacks
-- **Key env vars:** Requires BT Classic enabled in sdkconfig (`CONFIG_BT_CLASSIC_ENABLED=y` — already configured in `sdkconfig.defaults`)
-- **Gotchas:** BT Classic stack is large (~1MB); custom partition table with 1.9MB app space is required. Arduino-ESP32 enables BT Classic by default, but Bluepad32 may need additional sdkconfig overrides via `build_flags`.
+### Bluepad32 v4.2.0
+- **What:** DualSense Bluetooth HID host library for ESP32 using BTstack
+- **Loaded via:** ESP-IDF component in `components/bluepad32` + `components/bluepad32_arduino` + `components/btstack`
+- **Source:** Official [esp-idf-arduino-bluepad32-template](https://github.com/ricardoquesada/esp-idf-arduino-bluepad32-template) — components copied from template
+- **Architecture:** BTstack runs on CPU0 (`main.c` bootstraps it via `btstack_init()` + `uni_init()`), Arduino runs on CPU1. `BP32.update()` in the Arduino loop polls for controller data with mutex-protected cross-CPU access.
+- **sdkconfig requirements:** `CONFIG_BT_CONTROLLER_ONLY=y` (disables Bluedroid to avoid symbol collisions with BTstack), `CONFIG_BLUEPAD32_USB_CONSOLE_ENABLE=n` (to keep Arduino Serial working), `CONFIG_AUTOSTART_ARDUINO=n` (main.c handles bootstrap)
+- **DualSense protocol:** BR/EDR (BT Classic) — only ESP32-WROOM supports this (not S3/C3/C6/H2)
+- **Gotchas:** Bluepad32 uses Xbox-style button naming (A=south=Cross, B=east=Circle, X=west=Square, Y=north=Triangle). Analog triggers are 0-1023 range (not 0-255). Console class conflicts with Serial if `CONFIG_BLUEPAD32_USB_CONSOLE_ENABLE=y`.
 
 ---
 
@@ -165,7 +186,7 @@ Environment files / define sources:
 2. **GPIO ISR service double-install** — Arduino-ESP32 may pre-install the GPIO ISR service. `input_init()` tolerates `ESP_ERR_INVALID_STATE` from `gpio_install_isr_service()`.
 3. **I2C display blocking** — `u8g2.sendBuffer()` blocks the main loop for ~20ms per frame. Acceptable in Phase 1, but Phase 3's SPI slave has hard real-time constraints. Will need display rendering in a separate FreeRTOS task.
 4. **No unit tests yet** — Testable pure-logic functions exist (encoder table, menu state machine, value formatting) but test infrastructure is deferred to Epoch 3.
-5. **sdkconfig.defaults not auto-applied** — With `framework = arduino`, the sdkconfig.defaults file is a reference document only. Arduino-ESP32 has its own built-in sdkconfig. To override IDF settings, use `build_flags` in `platformio.ini`.
+5. **sdkconfig.defaults vs sdkconfig.esp32** — PlatformIO generates `sdkconfig.esp32` from `sdkconfig.defaults`. If `sdkconfig.esp32` exists with stale values, delete it to regenerate from defaults. Both files are gitignored.
 
 ---
 
@@ -343,15 +364,21 @@ Version string appears in 2 files:
 
 | File / Directory | Purpose |
 |------------------|---------|
-| `src/main.cpp` | Entry point: setup()/loop() orchestration |
-| `src/config.h` | Pin definitions, constants, thresholds |
-| `src/display.h/.cpp` | U8g2 SH1106 OLED driver + screen rendering + ControllerState struct |
-| `src/input.h/.cpp` | ISR encoder + button input, FreeRTOS queue |
-| `src/menu.h/.cpp` | Menu state machine + NVS settings |
-| `platformio.ini` | PlatformIO build configuration |
-| `sdkconfig.defaults` | ESP-IDF SDK defaults reference (not auto-applied with Arduino framework) |
+| `main/main.c` | BTstack/Bluepad32 bootstrap (CPU0 entry point) |
+| `main/main.cpp` | Arduino entry point: setup()/loop() orchestration |
+| `main/config.h` | Pin definitions, constants, thresholds |
+| `main/bt.h/.cpp` | Bluepad32 DualSense BT host, controller data mapping |
+| `main/display.h/.cpp` | U8g2 SH1106 OLED driver + screen rendering + ControllerState struct |
+| `main/input.h/.cpp` | ISR encoder + button input, FreeRTOS queue |
+| `main/menu.h/.cpp` | Menu state machine + NVS settings |
+| `main/CMakeLists.txt` | ESP-IDF component registration for main sources |
+| `CMakeLists.txt` | Top-level ESP-IDF project file |
+| `platformio.ini` | PlatformIO build configuration (espidf framework, pioarduino platform) |
+| `sdkconfig.defaults` | ESP-IDF SDK config (BT, Bluepad32, Arduino, FreeRTOS settings) |
 | `partitions.csv` | Custom flash partition table (1.9MB app, 20KB NVS, 64KB SPIFFS) |
+| `components/` | ESP-IDF components: arduino, bluepad32, bluepad32_arduino, btstack (gitignored, from template) |
 | `Makefile` | Build shortcuts (`make build`, `make flash`, `make monitor`, `make clean`) |
+| `pio_patches.py` | PlatformIO extra_scripts: strips `--ng` from esp_idf_size (pioarduino compat) |
 | `.gitignore` | Git ignores for PlatformIO/ESP-IDF/IDE/macOS/compiled artifacts |
 | `CLAUDE.md` | This file |
 | `CLAUDE_TEMPLATE.md` | Template this file was based on |
