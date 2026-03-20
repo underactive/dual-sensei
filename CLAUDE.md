@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**Dual-Sensei** is a PS5 DualSense-to-PS1/PS2 wireless controller bridge using an ESP32-WROOM-32, enabling wireless play on the original PlayStation 1 (1995) and PlayStation 2 (2000). Two independent bridge units provide 2-player support.
+**Dual-Sensei** is a wireless controller-to-PS1/PS2 bridge using an ESP32-WROOM-32, enabling wireless play on the original PlayStation 1 (1995) and PlayStation 2 (2000). Supports PS5 DualSense, PS4 DualShock 4, Xbox One (Bluetooth), and Nintendo Switch Pro controllers. Two independent bridge units provide 2-player support.
 
 **Current Version:** 0.2.0
 **Status:** In development (Epoch 2 — DualSense BT connected, no PS1/PS2 connection yet)
@@ -93,18 +93,21 @@ Modular C++ with Arduino setup()/loop() running under ESP-IDF. Each subsystem is
 - `display_update()` throttled to ~15 FPS via `millis()` check
 - Splash is one-shot (rendered once, not redrawn)
 - Menu rendering queries `menu.h` getters — no circular header dependency
-- **Visualizer screen**: Mode-dependent controller layout driven by `ControllerState` struct and console mode setting. **PS1 mode**: original digital pad layout — D-pad, face buttons (△○×□, r=5), shoulders (L1/L2/R1/R2), Select/Start, "PS1: XX XX" protocol bytes. **PS2 mode**: DualShock 2 layout — same buttons plus L3/R3 text labels in shoulder row (highlighted on press), analog stick circles (r=4) positioned between D-pad/face and Select/Start matching the physical controller layout, "PS2:XXYY XXYY XXYY" protocol bytes (6 bytes).
+- **Visualizer screen**: Mode-dependent controller layout driven by `ControllerState` struct and console mode setting. Status line shows controller type name (e.g. "DualSense", "XBox One") via `bt_get_controller_name()`, or "No Controller" when disconnected. **PS1 mode**: original digital pad layout — D-pad, face buttons (△○×□, r=5), shoulders (L1/L2/R1/R2), Select/Start, "PS1: XX XX" protocol bytes. **PS2 mode**: DualShock 2 layout — same buttons plus L3/R3 text labels in shoulder row (highlighted on press), analog stick circles (r=4) positioned between D-pad/face and Select/Start matching the physical controller layout, "PS2:XXYY XXYY XXYY" protocol bytes (6 bytes).
 - **ControllerState**: Struct in `display.h` with 16 button bools (including L3/R3) + 4 analog stick axes (lx/ly/rx/ry, 0-255, 128=center) + `connected` flag, passed via `display_set_controller()`
 
 #### 3. Bluetooth System (`bt.h/.cpp`)
-- **Bluepad32** BT host for DualSense (BR/EDR via BTstack on CPU0)
+- **Bluepad32** BT host for wireless controllers (BR/EDR + BLE via BTstack on CPU0)
+- **Supported controllers**: DualSense (PS5), DualShock 4 (PS4), Xbox One (BT), Switch Pro — all use Bluepad32's unified gamepad API. Button mapping, triggers, sticks, and rumble work identically across all controller types with no controller-specific code paths.
 - Callbacks (`on_connected`, `on_disconnected`) run on CPU1 inside `BP32.update()` — same task as Arduino `loop()`
-- `bt_update()` polls Bluepad32 and maps DualSense data to `ControllerState`
-- **Button mapping**: DualSense uses Xbox-style naming in Bluepad32 (A=Cross, B=Circle, X=Square, Y=Triangle)
+- `bt_update()` polls Bluepad32 and maps controller data to `ControllerState`
+- `bt_get_controller_name()` returns the display-friendly name of the connected controller (e.g. `"DualSense"`, `"DualShock 4"`, `"XBox One"`, `"Switch Pro"`)
+- **Button mapping**: Bluepad32 uses positional Xbox-style naming (A=south=Cross, B=east=Circle, X=west=Square, Y=north=Triangle) — correct for all controller types
 - **Analog triggers**: L2/R2 provide 0-1023 analog values, thresholded against `trigger_threshold` NVS setting (0-255, scaled via `/4`)
 - **Analog sticks**: Bluepad32 gives -511..512 signed; converted to PS2 range 0-255 (128=center) via `axis_to_ps2()`. Stored in ControllerState for visualizer and future SPI protocol.
 - **Stick-to-DPad**: When enabled, left stick axes (±512 range) are OR'd into D-pad bools using 128 deadzone
-- **Pairing**: `bt_start_pairing()` enables BT scanning, `bt_stop_pairing()` disables it. DualSense enters pairing mode via Create+PS hold.
+- **Touchpad**: DS4 and DualSense touchpads exposed as virtual mouse device via `enableVirtualDevice(true)`. Maps left half → Select, right half → Start when "Touchpad Sel/St" setting is ON. Inactive for Xbox/Switch (no touchpad, `connected_mouse` stays `nullptr`).
+- **Pairing**: `bt_start_pairing()` enables BT scanning, `bt_stop_pairing()` disables it. Pairing gestures: DS4/DualSense — Share/Create+PS hold; Xbox — pair button 3s; Switch Pro — sync button.
 - Single-controller design: rejects additional connections after first controller pairs
 
 #### 4. Menu System (`menu.h/.cpp`)
@@ -170,13 +173,14 @@ Environment files / define sources:
 ## External Integrations
 
 ### Bluepad32 v4.2.0
-- **What:** DualSense Bluetooth HID host library for ESP32 using BTstack
+- **What:** Multi-controller Bluetooth HID host library for ESP32 using BTstack
+- **Supported controllers:** DualSense (PS5), DualShock 4 (PS4), Xbox One (BT), Switch Pro — all mapped through a unified gamepad API (`Controller` class). The library's per-controller HID parsers normalize all inputs to a single `uni_gamepad_t` struct, so no controller-specific code is needed in the application layer.
 - **Loaded via:** ESP-IDF component in `components/bluepad32` + `components/bluepad32_arduino` + `components/btstack`
 - **Source:** Official [esp-idf-arduino-bluepad32-template](https://github.com/ricardoquesada/esp-idf-arduino-bluepad32-template) — components copied from template
 - **Architecture:** BTstack runs on CPU0 (`main.c` bootstraps it via `btstack_init()` + `uni_init()`), Arduino runs on CPU1. `BP32.update()` in the Arduino loop polls for controller data with mutex-protected cross-CPU access.
 - **sdkconfig requirements:** `CONFIG_BT_CONTROLLER_ONLY=y` (disables Bluedroid to avoid symbol collisions with BTstack), `CONFIG_BLUEPAD32_USB_CONSOLE_ENABLE=n` (to keep Arduino Serial working), `CONFIG_AUTOSTART_ARDUINO=n` (main.c handles bootstrap)
-- **DualSense protocol:** BR/EDR (BT Classic) — only ESP32-WROOM supports this (not S3/C3/C6/H2)
-- **Gotchas:** Bluepad32 uses Xbox-style button naming (A=south=Cross, B=east=Circle, X=west=Square, Y=north=Triangle). Analog triggers are 0-1023 range (not 0-255). Console class conflicts with Serial if `CONFIG_BLUEPAD32_USB_CONSOLE_ENABLE=y`.
+- **Protocols:** BR/EDR (DualSense, DualShock 4, Switch Pro, Xbox fw v3.x/v4.x) and BLE (Xbox fw v5.x+). ESP32-WROOM supports both; ESP32-S3/C3/C6/H2 support BLE only.
+- **Gotchas:** Bluepad32 uses Xbox-style positional button naming (A=south=Cross, B=east=Circle, X=west=Square, Y=north=Triangle) — correct for all controller types. Analog triggers are 0-1023 range (not 0-255). Console class conflicts with Serial if `CONFIG_BLUEPAD32_USB_CONSOLE_ENABLE=y`. `getModelName()` returns Arduino `String` (heap-allocated) — copy to fixed buffer promptly to avoid fragmentation.
 
 ---
 
@@ -330,14 +334,14 @@ After audit findings have been addressed, update the `implementation.md` file in
 
 ### Version bumps
 Version string appears in 2 files:
-1. `src/config.h` — `FW_VERSION` define
+1. `main/config.h` — `FW_VERSION` define
 2. `CLAUDE.md` — Project Overview section
 
 **Keep all version references in sync.**
 
 ### Add a new NVS setting
-1. Add default define in `src/config.h`
-2. Add variable + getter in `src/menu.h` / `src/menu.cpp`
+1. Add default define in `main/config.h`
+2. Add variable + getter in `main/menu.h` / `main/menu.cpp`
 3. Add NVS load in `menu_init()` with range validation
 4. Add `MenuItem` entry in `MENU_ITEMS[]` with unique `setting_id`, type `MENU_VALUE`, label, and help text
 5. Add `setting_id` case in `handle_edit()` for value adjustment (ENC_CW/CCW)
@@ -346,15 +350,15 @@ Version string appears in 2 files:
 8. Add `setting_id` cases in `menu_is_at_min()` and `menu_is_at_max()` for arrow visibility
 
 ### Add a new display screen
-1. Add enum value in `src/display.h` `Screen` enum
-2. Add render function `render_xxx()` in `src/display.cpp`
+1. Add enum value in `main/display.h` `Screen` enum
+2. Add render function `render_xxx()` in `main/display.cpp`
 3. Add case to `display_update()` switch
 4. If data-driven, add setter functions in `display.h`
 
 ### Add a new menu action item (non-editable)
 1. Add `MenuItem` entry in `MENU_ITEMS[]` with type `MENU_ACTION`, label, and help text
 2. Add dispatch case in `handle_settings()` CON/PHS handler (match by label first character or use a named constant)
-3. Add new `MenuState` enum value in `src/menu.h` if it has its own screen
+3. Add new `MenuState` enum value in `main/menu.h` if it has its own screen
 4. Add handler function (e.g., `handle_xxx()`) with BAK → return to settings
 5. Add dispatch case in `menu_handle_input()`
 

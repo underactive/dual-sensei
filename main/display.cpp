@@ -33,10 +33,12 @@ static void render_pairing() {
         u8g2.drawStr(0, 42, "Press [BAK] to return");
     } else {
         u8g2.drawStr(0, 10, "Waiting for");
-        u8g2.drawStr(0, 22, "DualSense...");
+        u8g2.drawStr(0, 22, "controller...");
         u8g2.drawHLine(0, 26, OLED_WIDTH);
-        u8g2.drawStr(0, 42, "Hold CREATE + PS");
-        u8g2.drawStr(0, 54, "to pair controller");
+        u8g2.setFont(u8g2_font_5x7_tr);
+        u8g2.drawStr(0, 38, "PS4/5: Share+PS hold");
+        u8g2.drawStr(0, 48, "Xbox:  pair btn 3s");
+        u8g2.drawStr(0, 58, "Switch: sync btn");
     }
 }
 
@@ -188,23 +190,59 @@ static void compute_protocol_bytes(const ControllerState& cs, uint8_t console_mo
     }
 }
 
+// ── Status Line Icons ────────────────────────────────────────────
+
+// Tiny gamepad icon (7x5 pixels). Body on top, grips on bottom.
+static void draw_icon_gamepad(uint8_t x, uint8_t y) {
+    u8g2.drawFrame(x, y, 7, 3);        // Body
+    u8g2.drawPixel(x + 2, y + 1);      // Left stick
+    u8g2.drawPixel(x + 4, y + 1);      // Right stick
+    u8g2.drawBox(x, y + 3, 2, 2);      // Left grip
+    u8g2.drawBox(x + 5, y + 3, 2, 2);  // Right grip
+}
+
+// Tiny console icon (7x5 pixels). Rectangle with disc drive slot.
+static void draw_icon_console(uint8_t x, uint8_t y) {
+    u8g2.drawFrame(x, y, 7, 5);        // Console body
+    u8g2.drawHLine(x + 2, y + 2, 3);   // Disc drive slot
+}
+
 // ── Visualizer Screen ────────────────────────────────────────────
 
 static void render_visualizer() {
     uint8_t mode = menu_get_console_mode();
 
-    // ── Status line (shared) ──
+    // ── Status line: P1  [gamepad] Name  [console] PS2 ──
     u8g2.setFont(u8g2_font_5x7_tr);
-    if (vis_ctrl.connected) {
-        u8g2.drawStr(0, 7, "Connected");
-    } else {
-        u8g2.drawStr(0, 7, "No Controller");
-    }
 
+    // Left: player number
     char pstr[4];
     snprintf(pstr, sizeof(pstr), "P%u", menu_get_player_number());
-    uint8_t pw = u8g2.getStrWidth(pstr);
-    u8g2.drawStr(OLED_WIDTH - pw, 7, pstr);
+    u8g2.drawStr(0, 7, pstr);
+    uint8_t px_end = u8g2.getStrWidth(pstr);
+
+    // Right: console icon + mode
+    const char* mode_str = (mode == 1) ? "PS2" : "PS1";
+    uint8_t mw = u8g2.getStrWidth(mode_str);
+    u8g2.drawStr(OLED_WIDTH - mw, 7, mode_str);
+    uint8_t console_ix = OLED_WIDTH - mw - 9;  // icon(7) + gap(2)
+    draw_icon_console(console_ix, 2);
+
+    // Center: controller icon + name (or "No Controller")
+    if (vis_ctrl.connected) {
+        const char* name = bt_get_controller_name();
+        if (name[0] == '\0') name = "Controller";
+        uint8_t nw = u8g2.getStrWidth(name);
+        uint8_t total = 7 + 2 + nw;  // icon(7) + gap(2) + name
+        uint8_t cx = (px_end + 3 + console_ix) / 2 - total / 2;
+        draw_icon_gamepad(cx, 2);
+        u8g2.drawStr(cx + 9, 7, name);
+    } else {
+        const char* nc = "---";
+        uint8_t ncw = u8g2.getStrWidth(nc);
+        uint8_t cx = (px_end + 3 + console_ix) / 2 - ncw / 2;
+        u8g2.drawStr(cx, 7, nc);
+    }
 
     u8g2.drawHLine(0, 10, OLED_WIDTH);
 

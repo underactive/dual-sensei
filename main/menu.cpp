@@ -17,7 +17,7 @@ static const MenuItem MENU_ITEMS[] = {
     { MENU_VALUE,   "Console Mode",   "Target console",            4 },
     { MENU_HEADING, "Device",         nullptr,                    -1 },
     { MENU_ACTION,  "Test Rumble",    "Send rumble to controller",-1 },
-    { MENU_ACTION,  "Pairing",        "Pair DualSense controller",-1 },
+    { MENU_ACTION,  "Pairing",        "Pair wireless controller", -1 },
     { MENU_ACTION,  "About",          "Firmware info",            -1 },
 };
 static const uint8_t MENU_ITEM_COUNT = sizeof(MENU_ITEMS) / sizeof(MENU_ITEMS[0]);

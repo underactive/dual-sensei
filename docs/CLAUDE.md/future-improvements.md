@@ -6,7 +6,7 @@
 - [ ] Boot animation or progress bar during init
 - [ ] Analog stick deadzone as a configurable setting
 - [ ] Button remapping (custom PS5→PS1 mapping profiles)
-- [ ] DualSense touchpad support (e.g., map regions to buttons)
+- [ ] DualSense touchpad: finer-grained zone mapping beyond current Select/Start halves
 - [ ] DualSense LED color customization via menu
 - [ ] OTA firmware updates via WiFi
 - [ ] Battery monitoring if powered from LiPo in future enclosure

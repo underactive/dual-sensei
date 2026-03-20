@@ -2,7 +2,7 @@
 
 ## Epoch 1: Scaffolding + Display + Input
 
-- [ ] Power on shows splash screen "DUAL-SENSEI v0.1.0" for ~2 seconds, then transitions to visualizer
+- [ ] Power on shows splash screen "DUAL-SENSEI v0.2.0" for ~2 seconds, then transitions to visualizer
 - [ ] Onboard LED (GPIO 2) lights during init, turns off when ready
 - [ ] Visualizer screen shows PS1 controller layout with all buttons in released state
 - [ ] Visualizer status line shows "No Controller" (left) and player number from NVS (right)
@@ -60,6 +60,9 @@
 - [ ] DualSense reconnects automatically after power cycle (BT keys stored in NVS)
 - [ ] Disconnecting DualSense (turning it off) resets visualizer to "No Controller" and all buttons released
 - [ ] Second DualSense attempting to connect is rejected (serial shows "[bt] already have a controller")
+- [ ] Serial shows "[bt] touchpad virtual device connected" when DualSense pairs
+- [ ] Rumble test works correctly after disconnecting and reconnecting the controller
+- [ ] Pairing screen transitions from "Waiting for controller..." to "Controller Connected!" when controller pairs while on pairing screen
 
 ## Epoch 2: PS2 Scope Expansion
 
@@ -82,6 +85,29 @@
 - [ ] About screen shows "PS5-to-PSX Bridge"
 - [ ] Serial log on boot shows console mode: "[menu] loaded — ... mode=PS1" or "mode=PS2"
 - [ ] All existing Epoch 2 button mappings still work correctly after PS2 expansion
-- [ ] "Test Rumble" action in Settings > Device sends a rumble pulse to connected DualSense
+- [ ] "Test Rumble" action in Settings > Device sends a rumble pulse to connected controller
 - [ ] "Test Rumble" with no controller connected does nothing (no crash)
 - [ ] Serial log shows "[bt] rumble: 300ms weak=128 strong=200" on test rumble
+
+## Multi-Controller Support
+
+- [ ] Pairing screen shows 3 lines of instructions: DS4/5, Xbox, Switch
+- [ ] Pairing help text reads "Pair wireless controller" (not DualSense-specific)
+- [ ] DualShock 4 pairs successfully — serial shows "[bt] gamepad connected: DualShock 4 VID=... PID=..."
+- [ ] DS4 visualizer status line shows "DualShock 4" (not "Connected")
+- [ ] DS4 all buttons, triggers, sticks, D-pad reflected correctly on visualizer
+- [ ] DS4 touchpad works with "Touchpad Sel/St" enabled (left=Select, right=Start)
+- [ ] DS4 rumble test sends haptic feedback
+- [ ] Xbox One controller pairs successfully — serial shows "[bt] gamepad connected: XBox One VID=... PID=..."
+- [ ] Xbox visualizer status line shows "XBox One"
+- [ ] Xbox all buttons, triggers, sticks, D-pad reflected correctly on visualizer
+- [ ] Xbox rumble test sends haptic feedback
+- [ ] Xbox "Touchpad Sel/St" has no effect (no crash)
+- [ ] Switch Pro controller pairs successfully — serial shows "[bt] gamepad connected: Switch Pro VID=... PID=..."
+- [ ] Switch Pro visualizer status line shows "Switch Pro"
+- [ ] Switch Pro all buttons, sticks, D-pad reflected correctly on visualizer
+- [ ] Switch Pro rumble test sends haptic feedback
+- [ ] Switch Pro "Touchpad Sel/St" has no effect (no crash)
+- [ ] Disconnecting any controller type resets visualizer to "No Controller" and all buttons released
+- [ ] After disconnecting one controller type, a different type can pair successfully
+- [ ] Controller name clears on disconnect, shows correct name on reconnect
