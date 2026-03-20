@@ -390,6 +390,7 @@ Version string appears in 2 files:
 | `docs/CLAUDE.md/version-history.md` | Changelog |
 | `docs/CLAUDE.md/testing-checklist.md` | Manual QA checklist |
 | `docs/CLAUDE.md/future-improvements.md` | Ideas backlog |
+| `docs/CLAUDE.md/multi-console-roadmap.md` | Retro console expansion plan (tiers, protocols, hardware) |
 
 ---
 
@@ -431,6 +432,10 @@ See `docs/CLAUDE.md/testing-checklist.md` for the full QA testing checklist.
 ## Future Improvements
 
 See `docs/CLAUDE.md/future-improvements.md` for the ideas backlog.
+
+## Multi-Console Roadmap
+
+See `docs/CLAUDE.md/multi-console-roadmap.md` for the retro console expansion plan (Atari 2600, NES, SNES, Genesis, Saturn, TG-16, N64, Dreamcast).
 
 ---
 
