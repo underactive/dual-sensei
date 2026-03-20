@@ -4,11 +4,11 @@
 #include "display.h"
 #include "input.h"
 #include "menu.h"
+#include "psx_spi.h"
 
 // ── Dual-Sensei Main ───────────────────────────────────────────────
 // Phase 1: OLED display + encoder/button input + menu with NVS.
-// Phase 2: Bluepad32 BT, DualSense input visualizer.
-// Phase 3 adds: PS5→PS1 button mapping, SPI slave protocol.
+// Phase 2: Bluepad32 BT + DualSense input visualizer + PSX SPI slave.
 
 void setup() {
     Serial.begin(115200);
@@ -24,6 +24,7 @@ void setup() {
     input_init();
     menu_init();
     bt_init();
+    psx_spi_init();
 
     display_show_splash();
     delay(2000);
@@ -46,10 +47,12 @@ void loop() {
     // Poll Bluepad32 for controller data
     bt_update();
 
-    // Push controller state to display task (visualizer reads it)
+    // Push controller state to display task and SPI response buffer
+    const ControllerState& cs = bt_get_state();
     if (display_get_screen() == SCREEN_VISUALIZER) {
-        display_set_controller(bt_get_state());
+        display_set_controller(cs);
     }
+    psx_spi_set_state(cs, menu_get_console_mode());
 
     // Serial commands: 's' = screenshot
     if (Serial.available()) {

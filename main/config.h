@@ -47,6 +47,10 @@
 #define MENU_VIEWPORT_ROWS   5
 #define MENU_HELP_BASELINE  59
 
+// ── PSX SPI Timing ──────────────────────────────────────────────
+#define PSX_ACK_DELAY_US     12    // Delay after last SCK before ACK pulse
+#define PSX_ACK_PULSE_US      2    // ACK LOW duration (minimum per spec)
+
 // ── PSX Protocol Constants ────────────────────────────────────────
 #define PS1_DEVICE_ID         0x41   // PS1 digital pad controller ID
 #define PS2_DEVICE_ID_ANALOG  0x73   // PS2 DualShock 2 analog mode
