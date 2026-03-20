@@ -22,12 +22,12 @@ struct ControllerState {
 
 void   display_init();
 void   display_show_splash();
+void   display_start_task();  // Start FreeRTOS render task (call after splash)
 void   display_set_screen(Screen screen);
 Screen display_get_screen();
-void   display_update();
 
 // Push controller state to the visualizer screen
 void display_set_controller(const ControllerState& state);
 
-// Dump current framebuffer as base64-encoded PNG to Serial
+// Request base64-encoded PNG screenshot (handled by display task)
 void display_screenshot();

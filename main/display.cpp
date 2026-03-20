@@ -15,10 +15,14 @@ static U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(
 
 // ── Display State ──────────────────────────────────────────────────
 static Screen   current_screen = SCREEN_SPLASH;
-static uint32_t last_frame_ms  = 0;
 
-// Visualizer data (pushed by main loop)
+// Visualizer data (pushed by main loop, read by display task — both CPU1)
 static ControllerState vis_ctrl;
+
+// FreeRTOS display task
+static TaskHandle_t display_task_handle = nullptr;
+static volatile bool screenshot_pending = false;
+static volatile bool screenshot_done    = false;
 
 // ── Screen Renderers ───────────────────────────────────────────────
 
@@ -480,24 +484,59 @@ void display_set_controller(const ControllerState& state) {
     vis_ctrl = state;
 }
 
-void display_update() {
-    uint32_t now = millis();
-    if (now - last_frame_ms < DISPLAY_FRAME_MS) return;
-    last_frame_ms = now;
+// Forward declaration — PNG encoder is defined below
+static void screenshot_encode();
 
-    // Splash is a one-shot render — don't redraw
-    if (current_screen == SCREEN_SPLASH) return;
+// ── Display FreeRTOS Task ─────────────────────────────────────────
+// Runs rendering + I2C sendBuffer in its own task so the main loop
+// is never blocked by the ~20ms I2C transfer. This is required for
+// Phase 2 SPI slave — the SPI ISR must fire during display I/O.
 
-    u8g2.clearBuffer();
+static void display_task_func(void* param) {
+    (void)param;
+    for (;;) {
+        if (current_screen != SCREEN_SPLASH) {
+            u8g2.clearBuffer();
 
-    switch (current_screen) {
-        case SCREEN_PAIRING:    render_pairing();    break;
-        case SCREEN_VISUALIZER: render_visualizer(); break;
-        case SCREEN_MENU:       render_menu();       break;
-        default: break;
+            switch (current_screen) {
+                case SCREEN_PAIRING:    render_pairing();    break;
+                case SCREEN_VISUALIZER: render_visualizer(); break;
+                case SCREEN_MENU:       render_menu();       break;
+                default: break;
+            }
+
+            u8g2.sendBuffer();  // Blocks ~20ms (I2C) — now isolated in this task
+        }
+
+        // Handle screenshot after sendBuffer (framebuffer is stable)
+        if (screenshot_pending) {
+            screenshot_encode();
+            screenshot_pending = false;
+            screenshot_done = true;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(DISPLAY_FRAME_MS));
     }
+}
 
-    u8g2.sendBuffer();
+void display_start_task() {
+    xTaskCreatePinnedToCore(
+        display_task_func,
+        "display",
+        4096,           // Stack: plenty for U8g2 rendering + PNG encoder
+        nullptr,
+        1,              // Priority 1 (below Arduino loop at priority 2)
+        &display_task_handle,
+        1               // Pin to CPU1 (same core as Arduino loop / U8g2 init)
+    );
+    Serial.println("[display] render task started");
+}
+
+void display_screenshot() {
+    screenshot_done = false;
+    screenshot_pending = true;
+    // Wait for display task to capture (buffer is stable after sendBuffer)
+    while (!screenshot_done) vTaskDelay(1);
 }
 
 // ── PNG Screenshot Encoder ────────────────────────────────────────
@@ -573,7 +612,7 @@ static void convert_page_row(const uint8_t* fb, uint8_t y, uint8_t* out16) {
     }
 }
 
-void display_screenshot() {
+static void screenshot_encode() {
     const uint8_t* fb = u8g2.getBufferPtr();
     uint8_t row_buf[16];
 

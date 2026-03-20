@@ -28,8 +28,9 @@ void setup() {
     display_show_splash();
     delay(2000);
 
-    // Transition to home visualizer screen
+    // Transition to home visualizer screen and start render task
     display_set_screen(SCREEN_VISUALIZER);
+    display_start_task();
     digitalWrite(PIN_LED_BT, LOW);
 
     Serial.println("[main] ready");
@@ -45,13 +46,10 @@ void loop() {
     // Poll Bluepad32 for controller data
     bt_update();
 
-    // Push controller state to display when visualizer is active
+    // Push controller state to display task (visualizer reads it)
     if (display_get_screen() == SCREEN_VISUALIZER) {
         display_set_controller(bt_get_state());
     }
-
-    // Render (throttled internally to ~15 FPS)
-    display_update();
 
     // Serial commands: 's' = screenshot
     if (Serial.available()) {
