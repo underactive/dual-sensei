@@ -10,20 +10,32 @@
 - [ ] D-pad rendered as cross shape with outlined arms and filled center
 - [ ] Face buttons (triangle, circle, cross, square) rendered as outlined circles with symbols
 - [ ] Shoulder buttons (L1, L2, R1, R2) and Select/Start shown as text labels
-- [ ] Pressing CON from visualizer opens Settings menu
-- [ ] Encoder rotates through menu items (Trigger Thresh, Stick->DPad, Player Number, Pairing, About)
-- [ ] Selecting "Trigger Thresh" and pressing CON enters edit mode (value shown in brackets)
+- [ ] Pressing CON or encoder push from visualizer opens Settings menu with first item selected (not pre-scrolled)
+- [ ] Rapid encoder rotation before pressing CON does not cause settings to appear pre-scrolled (queue flush)
+- [ ] Settings screen shows "Settings" header at top, separator line, help bar at bottom
+- [ ] Two group headings visible: "- Controller -" and "- Device -" (centered, non-selectable)
+- [ ] Encoder rotation skips heading rows and only stops on value/action items
+- [ ] Selected item shows full-row inversion (white background, black text)
+- [ ] Help bar updates to show item-specific help text when cursor moves
+- [ ] Pressing CON on "Trigger Thresh" enters inline edit mode (value portion inverted with < > arrows)
+- [ ] Help bar shows "Turn to adjust" while in edit mode
+- [ ] `<` arrow hidden when trigger threshold is at 0 (minimum)
+- [ ] `>` arrow hidden when trigger threshold is at 255 (maximum)
 - [ ] Rotating encoder in edit mode changes trigger threshold value (0-255)
-- [ ] Pressing CON in edit mode saves value and returns to settings list
+- [ ] Pressing CON or encoder push in edit mode saves value and returns to settings list
 - [ ] Pressing BAK in edit mode discards change and returns to settings list
-- [ ] Selecting "Stick->DPad" toggles between ON/OFF on encoder rotation
-- [ ] Selecting "Player Number" toggles between P1/P2 on encoder rotation
-- [ ] Selecting "Pairing..." shows pairing instructions screen
+- [ ] "Stick to DPad" toggles between ON/OFF on encoder rotation (both arrows visible, wrapping)
+- [ ] "Player Number" toggles between P1/P2 on encoder rotation
+- [ ] "Pairing" action item shows `>` caret on right side, full-row inversion when selected
+- [ ] Selecting "Pairing" shows pairing instructions screen
 - [ ] Pressing BAK from pairing returns to settings
-- [ ] Selecting "About..." shows firmware name, version, description
+- [ ] "About" action item shows `>` caret on right side
+- [ ] Selecting "About" shows firmware name, version, description
 - [ ] Pressing BAK from about returns to settings
 - [ ] Pressing BAK from settings returns to visualizer
 - [ ] Changed settings persist after power cycle (NVS)
 - [ ] Changing player number is reflected on visualizer status line after returning from menu
+- [ ] Viewport scrolls correctly when navigating to items beyond the 5 visible rows
+- [ ] Scrolling up to a group's first item also shows its preceding heading
 - [ ] No crashes or watchdog resets after 10 minutes of operation
 - [ ] Serial monitor shows init messages: display, input, menu with loaded settings

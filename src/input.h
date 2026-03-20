@@ -14,3 +14,4 @@ enum InputEvent : uint8_t {
 void       input_init();
 InputEvent input_poll();
 int32_t    input_get_encoder_pos();
+void       input_flush_queue();

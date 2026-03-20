@@ -76,8 +76,9 @@ Modular C++ with Arduino setup()/loop() running under ESP-IDF. Each subsystem is
 
 #### 1. Input System (`input.h/.cpp`)
 - Quadrature encoder uses a 16-entry state-machine lookup table — inherently rejects noise without delay-based debounce
-- Buttons debounced via `esp_timer_get_time()` with 50ms threshold in ISR
+- Buttons use armed/disarmed debounce pattern: ISR fires on `GPIO_INTR_ANYEDGE`, checks 50ms time-gate + pin-level LOW + armed flag. On press: queues event and disarms. Re-arming happens ONLY in `input_poll()` (main loop) after pin reads stable HIGH for the debounce period. This guarantees exactly one event per physical press regardless of bounce duration or hold time.
 - All input events pushed to a FreeRTOS queue, consumed non-blocking by `input_poll()` in the main loop
+- `input_flush_queue()` resets the queue — called on menu entry to prevent stale encoder events from carrying over
 - `ENC_STEPS_PER_DETENT` (default 4) controls encoder sensitivity — adjust if encoder feels too fast/slow
 - ISRs use `IRAM_ATTR` and `DRAM_ATTR` for reliability
 - GPIO ISR service serializes both encoder channel handlers on single core
@@ -93,10 +94,15 @@ Modular C++ with Arduino setup()/loop() running under ESP-IDF. Each subsystem is
 
 #### 3. Menu System (`menu.h/.cpp`)
 - State machine: HOME → SETTINGS → SETTING_EDIT / PAIRING / ABOUT
-- Encoder navigates items; CON enters/confirms; BAK goes back/discards
+- **Data-driven menu**: `MENU_ITEMS[]` array of `MenuItem` structs with `type` (HEADING/VALUE/ACTION), `label`, `help` text, and `setting_id`
+- Three item types: **MENU_HEADING** (non-selectable section divider), **MENU_VALUE** (editable setting), **MENU_ACTION** (navigable action)
+- `find_next_selectable()` skips heading rows during encoder navigation
+- Ghost_operator-style rendering: full-row inversion for selected items, partial-row inversion with `< >` arrows for inline editing, context-aware help bar at bottom
+- Encoder push (PHS) treated as CON in all menu states for consistent behavior
+- Queue flushed on menu entry to prevent stale encoder events
 - Settings saved to NVS on CON, discarded on BAK (snapshot/restore pattern)
 - Three persistent settings: trigger threshold (0-255), stick-to-dpad (bool), player number (1-2)
-- Five menu items: Trigger Thresh, Stick→DPad, Player Number, Pairing, About
+- Seven menu items across two groups: Controller (Trigger Thresh, Stick to DPad, Player Number) and Device (Pairing, About)
 
 #### 4. Settings / Configuration Storage
 ```
@@ -312,10 +318,11 @@ Version string appears in 2 files:
 1. Add default define in `src/config.h`
 2. Add variable + getter in `src/menu.h` / `src/menu.cpp`
 3. Add NVS load in `menu_init()` with range validation
-4. Add menu item in `MENU_LABELS[]`, increment `EDITABLE_COUNT` if editable
-5. Add edit handling in `handle_edit()`
-6. Add format case in `format_setting_value()`
-7. Add save/discard/snapshot cases
+4. Add `MenuItem` entry in `MENU_ITEMS[]` with unique `setting_id`, type `MENU_VALUE`, label, and help text
+5. Add `setting_id` case in `handle_edit()` for value adjustment (ENC_CW/CCW)
+6. Add `setting_id` case in `format_setting_value()` for display formatting
+7. Add `setting_id` cases in `save_current_setting()`, `discard_current_setting()`, `snapshot_current_setting()`
+8. Add `setting_id` cases in `menu_is_at_min()` and `menu_is_at_max()` for arrow visibility
 
 ### Add a new display screen
 1. Add enum value in `src/display.h` `Screen` enum
@@ -324,8 +331,8 @@ Version string appears in 2 files:
 4. If data-driven, add setter functions in `display.h`
 
 ### Add a new menu action item (non-editable)
-1. Add label to `MENU_LABELS[]` in `src/menu.cpp` (after editable items, before About)
-2. Add case to `handle_settings()` CON handler for entering the new state
+1. Add `MenuItem` entry in `MENU_ITEMS[]` with type `MENU_ACTION`, label, and help text
+2. Add dispatch case in `handle_settings()` CON/PHS handler (match by label first character or use a named constant)
 3. Add new `MenuState` enum value in `src/menu.h` if it has its own screen
 4. Add handler function (e.g., `handle_xxx()`) with BAK → return to settings
 5. Add dispatch case in `menu_handle_input()`

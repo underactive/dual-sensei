@@ -195,60 +195,118 @@ static void render_visualizer() {
     u8g2.drawStr(0, 62, hex);
 }
 
-// ── Settings Layout Constants ──────────────────────────────────────
-static const uint8_t SETTINGS_MAX_VISIBLE = 4;
-static const uint8_t SETTINGS_ITEM_H      = 12;
-static const uint8_t SETTINGS_LIST_Y      = 16;
-static const uint8_t SETTINGS_VAL_COL     = 95;  // Value column X position
-static const uint8_t SETTINGS_VAL_EDIT_COL = 90; // Editing column (wider for brackets)
-
 static void render_settings() {
-    uint8_t count    = menu_get_item_count();
-    uint8_t editable = menu_get_editable_count();
-    uint8_t selected = menu_get_selected_item();
-    bool    editing  = (menu_get_state() == MENU_SETTING_EDIT);
-
-    u8g2.setFont(u8g2_font_6x10_tr);
-    u8g2.drawStr(0, 10, "Settings");
-    u8g2.drawHLine(0, 13, OLED_WIDTH);
-
-    // Scroll offset keeps selected item visible.
-    // Self-corrects on menu re-entry: selected resets to 0 in
-    // handle_home, which triggers the `selected < scroll_offset`
-    // guard below to reset scroll_offset on the first render.
-    static uint8_t scroll_offset = 0;
-    if (selected < scroll_offset) scroll_offset = selected;
-    if (selected >= scroll_offset + SETTINGS_MAX_VISIBLE) {
-        scroll_offset = selected - SETTINGS_MAX_VISIBLE + 1;
-    }
+    const MenuItem* items    = menu_get_items();
+    uint8_t         count    = menu_get_item_count();
+    uint8_t         selected = menu_get_selected_item();
+    uint8_t         offset   = menu_get_scroll_offset();
+    bool            editing  = menu_is_editing();
 
     u8g2.setFont(u8g2_font_5x7_tr);
-    for (uint8_t i = 0; i < SETTINGS_MAX_VISIBLE && (scroll_offset + i) < count; i++) {
-        uint8_t idx = scroll_offset + i;
-        uint8_t y = SETTINGS_LIST_Y + i * SETTINGS_ITEM_H;
+    u8g2.setFontMode(1);  // Transparent — required for inverted text rendering
 
-        // Selection indicator
-        if (idx == selected) {
-            u8g2.drawStr(0, y + 8, ">");
-        }
+    // ── Header ──
+    u8g2.setDrawColor(1);
+    u8g2.drawStr(2, 7, "Settings");
+    u8g2.drawHLine(0, 9, OLED_WIDTH);
 
-        const char* label = menu_get_item_label(idx);
-        u8g2.drawStr(10, y + 8, label);
+    // ── Viewport: 5 rows x 8px starting at y=10 ──
+    for (uint8_t row = 0; row < MENU_VIEWPORT_ROWS; row++) {
+        uint8_t idx = offset + row;
+        if (idx >= count) break;
 
-        // Show current value for editable items only
-        if (idx < editable) {
-            char val[8];
-            if (idx == selected && editing) {
-                menu_get_edit_value(val, sizeof(val));
-                char decorated[sizeof(val) + 3]; // '[' + val + ']' + '\0'
-                snprintf(decorated, sizeof(decorated), "[%s]", val);
-                u8g2.drawStr(SETTINGS_VAL_EDIT_COL, y + 8, decorated);
-            } else {
-                menu_get_edit_value_for(idx, val, sizeof(val));
-                u8g2.drawStr(SETTINGS_VAL_COL, y + 8, val);
+        const MenuItem& item = items[idx];
+        uint8_t row_y = MENU_VIEWPORT_Y + row * MENU_ROW_H;  // Top of row
+        uint8_t text_y = row_y + 7;  // Baseline for 5x7 font
+
+        bool is_selected = (idx == selected);
+
+        switch (item.type) {
+            case MENU_HEADING: {
+                // Centered "- Label -" in normal color
+                char hdr[24];
+                snprintf(hdr, sizeof(hdr), "- %s -", item.label);
+                uint8_t hw = u8g2.getStrWidth(hdr);
+                u8g2.setDrawColor(1);
+                u8g2.drawStr((OLED_WIDTH - hw) / 2, text_y, hdr);
+                break;
+            }
+            case MENU_VALUE: {
+                char val[8];
+                menu_get_value_str(item.setting_id, val, sizeof(val));
+
+                if (is_selected && editing) {
+                    // Label in normal color
+                    u8g2.setDrawColor(1);
+                    u8g2.drawStr(2, text_y, item.label);
+
+                    // Build the arrow+value string
+                    char decorated[16];
+                    bool at_min = menu_is_at_min();
+                    bool at_max = menu_is_at_max();
+                    snprintf(decorated, sizeof(decorated), "%s%s%s",
+                             at_min ? "  " : "< ",
+                             val,
+                             at_max ? "  " : " >");
+
+                    // Invert only the value+arrows area (right-aligned)
+                    uint8_t dw = u8g2.getStrWidth(decorated);
+                    uint8_t dx = OLED_WIDTH - dw - 2;
+                    u8g2.drawBox(dx - 1, row_y, dw + 3, MENU_ROW_H);
+                    u8g2.setDrawColor(0);
+                    u8g2.drawStr(dx, text_y, decorated);
+                } else if (is_selected) {
+                    // Full row inversion
+                    u8g2.setDrawColor(1);
+                    u8g2.drawBox(0, row_y, OLED_WIDTH, MENU_ROW_H);
+                    u8g2.setDrawColor(0);
+                    u8g2.drawStr(2, text_y, item.label);
+                    uint8_t vw = u8g2.getStrWidth(val);
+                    u8g2.drawStr(OLED_WIDTH - vw - 2, text_y, val);
+                } else {
+                    // Normal
+                    u8g2.setDrawColor(1);
+                    u8g2.drawStr(2, text_y, item.label);
+                    uint8_t vw = u8g2.getStrWidth(val);
+                    u8g2.drawStr(OLED_WIDTH - vw - 2, text_y, val);
+                }
+                break;
+            }
+            case MENU_ACTION: {
+                if (is_selected) {
+                    // Full row inversion
+                    u8g2.setDrawColor(1);
+                    u8g2.drawBox(0, row_y, OLED_WIDTH, MENU_ROW_H);
+                    u8g2.setDrawColor(0);
+                    u8g2.drawStr(2, text_y, item.label);
+                    u8g2.drawStr(OLED_WIDTH - 7, text_y, ">");
+                } else {
+                    u8g2.setDrawColor(1);
+                    u8g2.drawStr(2, text_y, item.label);
+                    u8g2.drawStr(OLED_WIDTH - 7, text_y, ">");
+                }
+                break;
             }
         }
     }
+
+    // ── Bottom separator ──
+    u8g2.setDrawColor(1);
+    u8g2.drawHLine(0, MENU_VIEWPORT_Y + MENU_VIEWPORT_ROWS * MENU_ROW_H, OLED_WIDTH);
+
+    // ── Help bar ──
+    const char* help = nullptr;
+    if (editing) {
+        help = "Turn to adjust";
+    } else if (selected < count && items[selected].help) {
+        help = items[selected].help;
+    }
+    if (help) {
+        u8g2.drawStr(2, MENU_HELP_BASELINE, help);
+    }
+
+    u8g2.setFontMode(0);  // Restore default (solid background)
+    u8g2.setDrawColor(1);
 }
 
 static void render_about() {

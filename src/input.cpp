@@ -88,6 +88,19 @@ static const InputEvent BTN_EVENTS[BTN_COUNT] DRAM_ATTR = {
     INPUT_BTN_PHS,
 };
 
+// Pin lookup for level confirmation inside ISR
+static const gpio_num_t BTN_PINS[BTN_COUNT] DRAM_ATTR = {
+    (gpio_num_t)PIN_BTN_CON,
+    (gpio_num_t)PIN_BTN_BAK,
+    (gpio_num_t)PIN_ENC_SW,
+};
+
+// Armed/disarmed state: a button is disarmed after it fires an event
+// and can only re-arm when the main loop confirms the pin is HIGH
+// (released) for at least DEBOUNCE_US. This prevents release bounce
+// from generating phantom press events regardless of hold duration.
+static volatile bool btn_armed[BTN_COUNT] = {true, true, true};
+
 static void IRAM_ATTR button_isr(void* arg) {
     if (!input_queue) return;
 
@@ -98,6 +111,15 @@ static void IRAM_ATTR button_isr(void* arg) {
     if (now - last_btn_time[idx] < DEBOUNCE_US) return;
     last_btn_time[idx] = now;
 
+    // Disarmed — button is in the press/release bounce cycle.
+    // Still update last_btn_time above so bounce edges push back
+    // the re-arm window in input_poll().
+    if (!btn_armed[idx]) return;
+
+    // Confirm pin is LOW (active press)
+    if (gpio_get_level(BTN_PINS[idx])) return;
+
+    btn_armed[idx] = false;  // Disarm until main loop confirms release
     InputEvent evt = BTN_EVENTS[idx];
     BaseType_t woken = pdFALSE;
     xQueueSendFromISR(input_queue, &evt, &woken);
@@ -149,10 +171,12 @@ void input_init() {
     gpio_isr_handler_add((gpio_num_t)PIN_ENC_A, encoder_isr, nullptr);
     gpio_isr_handler_add((gpio_num_t)PIN_ENC_B, encoder_isr, nullptr);
 
-    // Buttons: interrupt on falling edge (active-low, pulled high)
-    gpio_set_intr_type((gpio_num_t)PIN_BTN_CON, GPIO_INTR_NEGEDGE);
-    gpio_set_intr_type((gpio_num_t)PIN_BTN_BAK, GPIO_INTR_NEGEDGE);
-    gpio_set_intr_type((gpio_num_t)PIN_ENC_SW,  GPIO_INTR_NEGEDGE);
+    // Buttons: interrupt on any edge (both press and release).
+    // Rising edges (release) update the debounce timer so that
+    // release-bounce falling edges are rejected by the time gate.
+    gpio_set_intr_type((gpio_num_t)PIN_BTN_CON, GPIO_INTR_ANYEDGE);
+    gpio_set_intr_type((gpio_num_t)PIN_BTN_BAK, GPIO_INTR_ANYEDGE);
+    gpio_set_intr_type((gpio_num_t)PIN_ENC_SW,  GPIO_INTR_ANYEDGE);
     gpio_isr_handler_add((gpio_num_t)PIN_BTN_CON, button_isr, (void*)(uintptr_t)0);
     gpio_isr_handler_add((gpio_num_t)PIN_BTN_BAK, button_isr, (void*)(uintptr_t)1);
     gpio_isr_handler_add((gpio_num_t)PIN_ENC_SW,  button_isr, (void*)(uintptr_t)2);
@@ -161,6 +185,19 @@ void input_init() {
 }
 
 InputEvent input_poll() {
+    // Re-arm buttons whose pins have settled HIGH (released) after
+    // the debounce window. This is the ONLY place buttons re-arm —
+    // the ISR disarms on press and never re-arms, guaranteeing one
+    // event per physical press regardless of bounce characteristics.
+    int64_t now = esp_timer_get_time();
+    for (uint8_t i = 0; i < BTN_COUNT; i++) {
+        if (!btn_armed[i] &&
+            gpio_get_level(BTN_PINS[i]) &&
+            (now - last_btn_time[i] >= DEBOUNCE_US)) {
+            btn_armed[i] = true;
+        }
+    }
+
     InputEvent evt = INPUT_NONE;
     xQueueReceive(input_queue, &evt, 0);  // Non-blocking
     return evt;
@@ -168,4 +205,9 @@ InputEvent input_poll() {
 
 int32_t input_get_encoder_pos() {
     return encoder_position;
+}
+
+void input_flush_queue() {
+    if (!input_queue) return;
+    xQueueReset(input_queue);
 }

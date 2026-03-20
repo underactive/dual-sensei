@@ -40,6 +40,12 @@
 #define INPUT_QUEUE_SIZE      8
 #define ENC_STEPS_PER_DETENT  4      // Quadrature transitions per encoder click
 
+// ── Menu Layout Constants ────────────────────────────────────────
+#define MENU_VIEWPORT_Y     10
+#define MENU_ROW_H           8
+#define MENU_VIEWPORT_ROWS   5
+#define MENU_HELP_BASELINE  59
+
 // ── PS1 Protocol Constants ─────────────────────────────────────────
 #define PS1_DEVICE_ID    0x41   // Digital pad controller ID
 #define PS1_DATA_MARKER  0x5A   // "Data ready" byte
