@@ -191,6 +191,8 @@ Environment files / define sources:
 3. **I2C display blocking** — `u8g2.sendBuffer()` blocks the main loop for ~20ms per frame. Acceptable in Phase 1, but Phase 3's SPI slave has hard real-time constraints. Will need display rendering in a separate FreeRTOS task.
 4. **No unit tests yet** — Testable pure-logic functions exist (encoder table, menu state machine, value formatting) but test infrastructure is deferred to Epoch 3.
 5. **sdkconfig.defaults vs sdkconfig.esp32** — PlatformIO generates `sdkconfig.esp32` from `sdkconfig.defaults`. If `sdkconfig.esp32` exists with stale values, delete it to regenerate from defaults. Both files are gitignored.
+6. **DualSense BT disconnect** — DualSense (firmware Jul 2025, v0x110002a) disconnects ~2 seconds after setup completes. L2CAP interrupt channel closes before application code can intervene. Likely requires Bluepad32 update or sending output report earlier in the DualSense parser's setup sequence. Other controller types (DS4, Xbox, Switch Pro) may not have this issue.
+7. **PSX SPI requires manual enable** — ATT interrupt starts disabled to prevent ISR storms when no console is connected. Send `p` over serial to enable after powering on the PS1/PS2. Auto-detection is a future improvement.
 
 ---
 
