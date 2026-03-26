@@ -37,6 +37,10 @@ void setup() {
     Serial.println("[main] ready");
 }
 
+// ── SPI Debug ────────────────────────────────────────────────────
+static unsigned long last_diag_ms = 0;
+static const unsigned long DIAG_INTERVAL_MS = 1000;
+
 void loop() {
     // Poll input events from ISR queue
     InputEvent evt = input_poll();
@@ -54,10 +58,41 @@ void loop() {
     }
     psx_spi_set_state(cs, menu_get_console_mode());
 
-    // Serial commands: 's' = screenshot
+    // SPI debug: print ATT/byte counters + register state every second
+    unsigned long now = millis();
+    if (now - last_diag_ms >= DIAG_INTERVAL_MS) {
+        last_diag_ms = now;
+        uint32_t att_falls = 0, spi_bytes = 0;
+        psx_spi_read_counters(&att_falls, &spi_bytes);
+        bool clk_lvl = false, usr_armed = false;
+        uint32_t sreg = 0;
+        psx_spi_read_diag(&clk_lvl, &usr_armed, &sreg);
+        if (att_falls > 0 || spi_bytes > 0) {
+            Serial.printf("[psx_spi] ATT:%lu  bytes:%lu  CLK:%d  USR:%d  SREG:0x%08lx\n",
+                          att_falls, spi_bytes, clk_lvl, usr_armed, sreg);
+            // Print last transaction CMD/DAT bytes
+            uint8_t cmd_buf[10], dat_buf[10], tlen = 0;
+            psx_spi_read_last_transaction(cmd_buf, dat_buf, &tlen);
+            if (tlen > 0) {
+                Serial.printf("  CMD:");
+                for (uint8_t i = 0; i < tlen; i++) Serial.printf(" %02X", cmd_buf[i]);
+                Serial.printf("\n  DAT:");
+                for (uint8_t i = 0; i < tlen; i++) Serial.printf(" %02X", dat_buf[i]);
+                Serial.printf("\n");
+            }
+            digitalWrite(PIN_LED_BT, !digitalRead(PIN_LED_BT));
+        } else {
+            digitalWrite(PIN_LED_BT, LOW);
+        }
+    }
+
+    // Serial commands: 's' = screenshot, 'p' = enable PSX SPI, 'o' = disable PSX SPI
     if (Serial.available()) {
         char c = Serial.read();
         if (c == 's') display_screenshot();
+        else if (c == 'p') psx_spi_enable();
+        else if (c == 'o') psx_spi_disable();
+        else if (c == 'c') psx_spi_cycle_clock();
     }
 
     // Yield to FreeRTOS scheduler — required with espidf framework
